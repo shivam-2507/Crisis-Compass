@@ -4,9 +4,16 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import { Box, Button, TextField, MenuItem } from '@mui/material';
 import { styled } from '@mui/material/styles';
+import './app.css';
 
 const IncidentCard = styled(Card)(({ theme, severity }) => ({
-  borderLeft: `4px solid ${severity === 'high' ? theme.palette.error.main : severity === 'medium' ? theme.palette.warning.main : theme.palette.success.main}`,
+  borderLeft: `4px solid ${
+    severity === 'high'
+      ? theme.palette.error.main
+      : severity === 'medium'
+      ? theme.palette.warning.main
+      : theme.palette.success.main
+  }`,
   borderRadius: 8,
   boxShadow: severity === 'high' ? '0 0 8px rgba(255, 0, 0, 0.3)' : '0 0 4px rgba(0, 0, 0, 0.1)',
   cursor: 'pointer',
@@ -16,12 +23,16 @@ const IncidentCard = styled(Card)(({ theme, severity }) => ({
   },
 }));
 
-
 const StatusBadge = styled(Box)(({ theme, severity }) => ({
   padding: '4px 8px',
   borderRadius: 8,
   color: '#000',
-  backgroundColor: severity === 'high' ? theme.palette.error.light : severity === 'medium' ? theme.palette.warning.light : theme.palette.success.light,
+  backgroundColor:
+    severity === 'high'
+      ? theme.palette.error.light
+      : severity === 'medium'
+      ? theme.palette.warning.light
+      : theme.palette.success.light,
   fontWeight: 'bold',
   fontSize: '0.75rem',
   display: 'inline-block',
@@ -59,36 +70,74 @@ const CrisisCompass = () => {
       timestamp: '2024-10-26 11:00 AM',
       description: 'Rising water levels in downtown area. Evacuation may be necessary.',
       trustScore: 85,
-    }
+    },
+    {
+      id: 4,
+      type: 'chemical',
+      title: 'Chemical Spill',
+      location: 'Industrial Sector 4',
+      severity: 'medium',
+      timestamp: '2024-10-26 12:00 PM',
+      description: 'Leak of hazardous materials reported. Nearby areas are at risk.',
+      trustScore: 78,
+    },
+    {
+      id: 5,
+      type: 'storm',
+      title: 'Severe Thunderstorm',
+      location: 'Coastal Towns',
+      severity: 'low',
+      timestamp: '2024-10-26 01:15 PM',
+      description: 'Heavy rain and high winds expected. Be cautious of flooding.',
+      trustScore: 70,
+    },
   ]);
 
   const [newIncident, setNewIncident] = useState({
     type: 'fire',
     title: '',
     location: '',
-    severity: 'low',
     timestamp: '',
     description: '',
-    trustScore: 50,
   });
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewIncident((prev) => ({ ...prev, [name]: value }));
+  const calculateSeverity = (incident) => {
+    const { type, title, location, description } = incident;
+    let score = 50;
+
+    // Increase score based on type
+    if (type === 'fire' || type === 'chemical' || type === 'flood') score += 20;
+    else if (type === 'medical') score += 15;
+    
+    // Increase based on description keywords
+    if (description.toLowerCase().includes('urgent') || description.toLowerCase().includes('hazard')) score += 10;
+    if (description.toLowerCase().includes('evacuation') || description.toLowerCase().includes('high risk')) score += 15;
+
+    // Set severity based on score
+    return score > 80 ? 'high' : score > 60 ? 'medium' : 'low';
   };
 
   const addNewIncident = () => {
-    const incidentWithId = { ...newIncident, id: incidents.length + 1 };
+    const severity = calculateSeverity(newIncident);
+    const incidentWithId = {
+      ...newIncident,
+      id: incidents.length + 1,
+      severity,
+      trustScore: Math.floor(Math.random() * 20) + 60,
+    };
     setIncidents((prev) => [...prev, incidentWithId]);
     setNewIncident({
       type: 'fire',
       title: '',
       location: '',
-      severity: 'low',
       timestamp: '',
       description: '',
-      trustScore: 50,
     });
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewIncident((prev) => ({ ...prev, [name]: value }));
   };
 
   const getIcon = (type) => {
@@ -99,41 +148,55 @@ const CrisisCompass = () => {
         return <span role="img" aria-label="flood">💧</span>;
       case 'medical':
         return <span role="img" aria-label="medical">🚑</span>;
+      case 'chemical':
+        return <span role="img" aria-label="chemical">☣️</span>;
+      case 'storm':
+        return <span role="img" aria-label="storm">🌩️</span>;
       default:
         return <span role="img" aria-label="alert">⚠️</span>;
     }
   };
 
   return (
-    <Box maxWidth="md" mx="auto" p={4}>
+    <Box id="root">
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={4}>
-        <Typography variant="h3" fontWeight="bold">CrisisCompass</Typography>
+        <Typography variant="h3" fontWeight="bold" className="logo">
+          CrisisCompass
+        </Typography>
         <Box display="flex" alignItems="center" gap={1}>
           <span role="img" aria-label="live">📡</span>
-          <Typography color="green" fontWeight="medium">Live Dashboard</Typography>
+          <Typography color="green" fontWeight="medium">
+            Live Dashboard
+          </Typography>
         </Box>
       </Box>
 
-      {/* Form to add new incident */}
-      <Box mb={4}>
-        <Typography variant="h6" fontWeight="bold" mb={2}>Add New Incident</Typography>
+      {/* User Input Section */}
+      <Box className="card" mb={4}>
+        <Typography variant="h6" fontWeight="bold" mb={2}>
+          Report a New Incident
+        </Typography>
         <Box display="flex" flexDirection="column" gap={2}>
           <TextField label="Title" name="title" value={newIncident.title} onChange={handleInputChange} />
           <TextField label="Location" name="location" value={newIncident.location} onChange={handleInputChange} />
           <TextField label="Timestamp" name="timestamp" value={newIncident.timestamp} onChange={handleInputChange} placeholder="YYYY-MM-DD HH:MM AM/PM" />
           <TextField label="Description" name="description" value={newIncident.description} onChange={handleInputChange} multiline rows={3} />
           <TextField
-            label="Severity"
-            name="severity"
-            value={newIncident.severity}
+            label="Type"
+            name="type"
+            value={newIncident.type}
             onChange={handleInputChange}
             select
           >
-            <MenuItem value="low">Low</MenuItem>
-            <MenuItem value="medium">Medium</MenuItem>
-            <MenuItem value="high">High</MenuItem>
+            <MenuItem value="fire">Fire</MenuItem>
+            <MenuItem value="medical">Medical</MenuItem>
+            <MenuItem value="flood">Flood</MenuItem>
+            <MenuItem value="chemical">Chemical</MenuItem>
+            <MenuItem value="storm">Storm</MenuItem>
           </TextField>
-          <Button variant="contained" color="primary" onClick={addNewIncident}>Add Incident</Button>
+          <Button variant="contained" color="primary" onClick={addNewIncident}>
+            Submit Incident
+          </Button>
         </Box>
       </Box>
 
@@ -141,14 +204,7 @@ const CrisisCompass = () => {
       <Box display="flex" flexDirection="column" gap={2} mb={4}>
         <Typography variant="h6" fontWeight="bold">Active Incidents</Typography>
         {incidents.map((incident) => (
-          <IncidentCard
-            key={incident.id}
-            severity={incident.severity}
-            onClick={() => setSelectedIncident(incident)}
-            sx={{
-              borderColor: selectedIncident?.id === incident.id ? 'primary.main' : 'transparent',
-            }}
-          >
+          <IncidentCard key={incident.id} severity={incident.severity} onClick={() => setSelectedIncident(incident)}>
             <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box display="flex" alignItems="center" gap={2}>
                 {getIcon(incident.type)}
@@ -159,50 +215,28 @@ const CrisisCompass = () => {
               </Box>
               <StatusBadge severity={incident.severity}>{incident.severity.toUpperCase()}</StatusBadge>
             </CardContent>
+            <CardContent>
+              <Typography variant="body2" color="text.secondary">{incident.description}</Typography>
+              <Typography variant="caption" display="block" color="text.secondary">{incident.timestamp}</Typography>
+              <Typography variant="caption" color="text.secondary" fontWeight="bold">Trust Score: {incident.trustScore}%</Typography>
+            </CardContent>
           </IncidentCard>
         ))}
       </Box>
 
-      {/* Incident Details */}
-      <Box>
-        <Typography variant="h6" fontWeight="bold" mb={2}>Incident Details</Typography>
-        {selectedIncident ? (
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={2}>
-                {getIcon(selectedIncident.type)}
-                <Typography variant="h5" fontWeight="bold">{selectedIncident.title}</Typography>
-              </Box>
-              <Typography variant="body2" color="text.secondary">Location</Typography>
-              <Typography variant="body1" mb={1}>{selectedIncident.location}</Typography>
-              <Typography variant="body2" color="text.secondary">Time Reported</Typography>
-              <Typography variant="body1" mb={1}>{selectedIncident.timestamp}</Typography>
-              <Typography variant="body2" color="text.secondary">Description</Typography>
-              <Typography variant="body1" mb={1}>{selectedIncident.description}</Typography>
-              <Typography variant="body2" color="text.secondary">Trust Score</Typography>
-              <Box display="flex" alignItems="center" gap={1}>
-                <Box width="100%" height={8} bgcolor="grey.200" borderRadius={4}>
-                <Box
-                  width={`${selectedIncident.trustScore}%`}
-                  height="100%"
-                  bgcolor="green"
-                  borderRadius={4}
-                />
-                </Box>
-                <Typography variant="body2" fontWeight="bold">{selectedIncident.trustScore}%</Typography>
-              </Box>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" align="center">
-                Select an incident to view details
-              </Typography>
-            </CardContent>
-          </Card>
-        )}
-      </Box>
+      {/* Incident Details - Display selected incident info if any */}
+      {selectedIncident && (
+        <Box className="card" mt={2}>
+          <Typography variant="h6" fontWeight="bold" mb={2}>Incident Details</Typography>
+          <Typography variant="body1" fontWeight="bold">{selectedIncident.title}</Typography>
+          <Typography variant="body2" color="text.secondary">{selectedIncident.location}</Typography>
+          <Typography variant="body2" mt={1}>{selectedIncident.description}</Typography>
+          <Typography variant="caption" color="text.secondary" display="block">{selectedIncident.timestamp}</Typography>
+          <Typography variant="caption" color="text.secondary" fontWeight="bold">Severity: {selectedIncident.severity.toUpperCase()}</Typography>
+          <Typography variant="caption" color="text.secondary" fontWeight="bold">Trust Score: {selectedIncident.trustScore}%</Typography>
+          <Button variant="outlined" color="secondary" onClick={() => setSelectedIncident(null)} mt={2}>Close</Button>
+        </Box>
+      )}
     </Box>
   );
 };
