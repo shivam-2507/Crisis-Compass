@@ -4,7 +4,6 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import { Box, Button, TextField, MenuItem } from '@mui/material';
 import './App.css';
-import './App.css';
 
 const CrisisCompass = () => {
   const [incidents, setIncidents] = useState([
@@ -23,7 +22,6 @@ const CrisisCompass = () => {
     description: '',
   });
 
-  // Points assigned to each incident type
   const typePoints = {
     fire: 20,
     medical: 15,
@@ -32,13 +30,11 @@ const CrisisCompass = () => {
     storm: 10,
   };
 
-  // Updated calculateSeverity function
   const calculateSeverity = (incident) => {
     const { type, description } = incident;
     let score = typePoints[type] || 10;
     let trustScore = 50;
 
-    // Type-based score adjustments
     switch (type) {
       case 'fire':
         score += 20;
@@ -59,7 +55,6 @@ const CrisisCompass = () => {
         score += 10;
     }
 
-    // Description-based score adjustments for urgency and risk keywords
     const descriptionLower = description.toLowerCase();
     const urgencyKeywords = ['urgent', 'hazard', 'critical', 'immediate', 'life-threatening', 'emergency'];
     const riskKeywords = ['evacuation', 'high risk', 'danger', 'severe', 'major incident', 'disaster', 'rescue needed'];
@@ -72,7 +67,6 @@ const CrisisCompass = () => {
       if (descriptionLower.includes(keyword)) score += 15;
     });
 
-    // Adjust trust score based on trustworthiness keywords
     if (descriptionLower.includes('confirmed') || descriptionLower.includes('verified')) {
       trustScore += 25;
     } else if (descriptionLower.includes('reported') || descriptionLower.includes('estimated')) {
@@ -81,7 +75,6 @@ const CrisisCompass = () => {
       trustScore -= 15;
     }
 
-    // Return calculated points, severity, and trust score
     return {
       points: score,
       severity: score > 90 ? 'high' : score > 65 ? 'medium' : 'low',
@@ -108,9 +101,6 @@ const CrisisCompass = () => {
     });
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewIncident((prev) => ({ ...prev, [name]: value }));
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setNewIncident((prev) => ({ ...prev, [name]: value }));
@@ -142,30 +132,27 @@ const CrisisCompass = () => {
       {/* Display Active Incidents */}
       <Box className="active-incidents">
         <Typography variant="h6" fontWeight="bold">Active Incidents</Typography>
-        {incidents.map((incident) => (
-          <Card key={incident.id} className={`incident-card status-${incident.severity}`}>
-          <Card key={incident.id} className={`incident-card status-${incident.severity}`}>
-            <CardContent>
-              <Typography variant="body1" fontWeight="bold">
-                <span className="icon">🔥</span> {/* Optional: Replace with an icon library or emoji */}
-                {incident.title}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">{incident.location}</Typography>
-              <Typography variant="body2" color="text.secondary">{incident.description}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {incident.timestamp}
-              </Typography>
-              <Typography variant="caption" className={`severity-badge severity-${incident.severity}`} style={{ float: 'right', padding: '0.2rem 0.6rem', borderRadius: '8px', color: 'white', backgroundColor: incident.severity === 'high' ? '#e57373' : incident.severity === 'medium' ? '#ffb74d' : '#81c784' }}>
-                {incident.severity.toUpperCase()} - {incident.points} pts
-              </Typography>
-              <Typography variant="caption" color="text.secondary" style={{ display: 'block', marginTop: '8px' }}>Trust Score: {incident.trustScore}%</Typography>
-            </CardContent>
-          </Card>
-        ))}
+        {incidents
+          .sort((a, b) => b.points - a.points) // Sort by points descending
+          .map((incident) => (
+            <Card key={incident.id} className={`incident-card status-${incident.severity}`}>
+              <CardContent>
+                <Typography variant="body1" fontWeight="bold">
+                  <span className="icon">🔥</span> {incident.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">{incident.location}</Typography>
+                <Typography variant="body2" color="text.secondary">{incident.description}</Typography>
+                <Typography variant="caption" color="text.secondary">{incident.timestamp}</Typography>
+                <Typography variant="caption" className={`severity-badge severity-${incident.severity}`} style={{ float: 'right', padding: '0.2rem 0.6rem', borderRadius: '8px', color: 'white', backgroundColor: incident.severity === 'high' ? '#e57373' : incident.severity === 'medium' ? '#ffb74d' : '#81c784' }}>
+                  {incident.severity.toUpperCase()} - {incident.points} pts
+                </Typography>
+                <Typography variant="caption" color="text.secondary" style={{ display: 'block', marginTop: '8px' }}>Trust Score: {incident.trustScore}%</Typography>
+              </CardContent>
+            </Card>
+          ))}
       </Box>
     </Box>
   );
 };
 
 export default CrisisCompass;
-
