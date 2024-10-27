@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
@@ -28,6 +28,14 @@ const CrisisCompass = () => {
     flood: 18,
     chemical: 20,
     storm: 10,
+  };
+
+  const incidentIcons = {
+    fire: '🔥',
+    medical: '🚑',
+    flood: '🌊',
+    chemical: '☢️',
+    storm: '🌩️',
   };
 
   const calculateSeverity = (incident) => {
@@ -106,6 +114,23 @@ const CrisisCompass = () => {
     setNewIncident((prev) => ({ ...prev, [name]: value }));
   };
 
+  useEffect(() => {
+    const cursor = document.createElement("div");
+    cursor.id = "glow-cursor";
+    document.body.appendChild(cursor);
+
+    const moveCursor = (e) => {
+      cursor.style.left = `${e.clientX}px`;
+      cursor.style.top = `${e.clientY}px`;
+    };
+
+    window.addEventListener("mousemove", moveCursor);
+    return () => {
+      window.removeEventListener("mousemove", moveCursor);
+      cursor.remove();
+    };
+  }, []);
+
   return (
     <Box id="root">
       <Typography variant="h3" fontWeight="bold" className="logo">
@@ -138,7 +163,7 @@ const CrisisCompass = () => {
             <Card key={incident.id} className={`incident-card status-${incident.severity}`}>
               <CardContent>
                 <Typography variant="body1" fontWeight="bold">
-                  <span className="icon">🔥</span> {incident.title}
+                  <span className="icon">{incidentIcons[incident.type]}</span> {incident.title}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">{incident.location}</Typography>
                 <Typography variant="body2" color="text.secondary">{incident.description}</Typography>

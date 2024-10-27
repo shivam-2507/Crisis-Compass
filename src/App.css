@@ -1,3 +1,26 @@
+/* Apply Microsoft Sans Serif font */
+* {
+  font-family: 'Microsoft Sans Serif', Arial, Helvetica, sans-serif;
+}
+
+/* Custom glowing cursor */
+#glow-cursor {
+  position: fixed;
+  pointer-events: none;
+  width: 20px;
+  /* Width of the glowing cursor */
+  height: 20px;
+  /* Height of the glowing cursor */
+  background: rgba(255, 255, 255, 0.5);
+  /* Color of the cursor */
+  border-radius: 50%;
+  /* Make it circular */
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+  /* Glow effect */
+  transition: background 0.3s ease, transform 0.3s ease;
+  /* Smooth transitions */
+}
+
 /* Root container styling */
 #root {
   width: 100%;
@@ -23,22 +46,6 @@
   filter: drop-shadow(0 0 2em #ffffff);
 }
 
-/*@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}*/
-
-@media (prefers-reduced-motion: no-preference) {
-  .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
 /* Card styling */
 .card {
   background-color: white;
@@ -48,7 +55,13 @@
   box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
   width: 100%;
   max-width: 500px;
-  margin: 0 auto;
+  transition: box-shadow 0.3s ease;
+  /* Smooth transition for box shadow */
+}
+
+.card:hover {
+  box-shadow: 0 0 20px rgba(255, 255, 0, 0.7);
+  /* Glow effect on hover */
 }
 
 /* Button styling */
@@ -102,10 +115,12 @@ button:hover {
   border-radius: 8px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   transition: box-shadow 0.3s ease;
+  /* Smooth transition for box shadow */
   cursor: pointer;
   width: 100%;
 }
 
 .incident-card:hover {
-  box-shadow: 0 0 12px rgba(0, 0, 255, 0.3);
+  box-shadow: 0 0 20px rgba(255, 255, 0, 0.7);
+  /* Glow effect on hover */
 }
