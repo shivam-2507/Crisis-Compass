@@ -1,28 +1,6 @@
-/* Apply Microsoft Sans Serif font */
-* {
-  font-family: 'Microsoft Sans Serif', Arial, Helvetica, sans-serif;
-}
-
-/* Custom glowing cursor */
-#glow-cursor {
-  position: fixed;
-  pointer-events: none;
-  width: 20px;
-  /* Width of the glowing cursor */
-  height: 20px;
-  /* Height of the glowing cursor */
-  background: rgba(255, 255, 255, 0.5);
-  /* Color of the cursor */
-  border-radius: 50%;
-  /* Make it circular */
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
-  /* Glow effect */
-  transition: background 0.3s ease, transform 0.3s ease;
-  /* Smooth transitions */
-}
-
 /* Root container styling */
 #root {
+  margin-top: 30px;
   width: 100%;
   background: linear-gradient(135deg, #000000, #3b82f6);
   min-height: 100vh;
@@ -34,93 +12,79 @@
   gap: 2rem;
 }
 
+/* Header styles */
+#header {
+  width: 97%;
+  padding: 1rem 2rem;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background: linear-gradient(135deg, #000000, #3b82f6);
+  z-index: 10;
+}
+
 /* Logo styling */
 .logo {
-  font-size: 2.5rem;
-  padding: 0.5rem 1rem;
-  transition: filter 300ms;
-  cursor: pointer;
+  color: #ffffff;
+  font-weight: bold;
 }
 
-.logo:hover {
-  filter: drop-shadow(0 0 2em #ffffff);
+/* Menu button styling */
+.menu button {
+  color: white;
+  font-weight: bold;
+  margin-left: 1rem;
 }
 
-/* Card styling */
+/* Glow effect cursor */
+#glow-cursor {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background-color: #ff4081;
+  position: absolute;
+  pointer-events: none;
+  transition: transform 0.1s ease;
+  mix-blend-mode: difference;
+}
+
+/* Card and heading styling */
+.heading {
+  color: white;
+  text-align: center;
+}
+
 .card {
   background-color: white;
   color: black;
-  padding: 2rem;
+  padding: 1.5rem;
   border-radius: 10px;
-  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
   width: 100%;
-  max-width: 500px;
-  transition: box-shadow 0.3s ease;
-  /* Smooth transition for box shadow */
+  max-width: 600px;
 }
 
-.card:hover {
-  box-shadow: 0 0 20px rgba(255, 255, 0, 0.7);
-  /* Glow effect on hover */
-}
-
-/* Button styling */
-button {
-  background: linear-gradient(90deg, #ff8a00, #ff2a6d);
-  color: white;
-  font-weight: bold;
-  border: none;
-  padding: 0.8rem 1.5rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-button:hover {
-  background: linear-gradient(90deg, #ff2a6d, #ff8a00);
-}
-
-/* Badge styling */
-.status-badge {
-  padding: 0.3rem 0.6rem;
-  border-radius: 5px;
-  font-weight: bold;
-  color: black;
-}
-
-.status-high {
-  background-color: #ff5252;
-}
-
-.status-medium {
-  background-color: #ffa726;
-}
-
-.status-low {
-  background-color: #66bb6a;
-}
-
-/* Incident list styling */
 .active-incidents {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
   width: 100%;
-  max-width: 500px;
+  max-width: 600px;
 }
 
 .incident-card {
-  border-left: 4px solid;
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  transition: box-shadow 0.3s ease;
-  /* Smooth transition for box shadow */
-  cursor: pointer;
-  width: 100%;
+  margin-top: 1rem;
 }
 
-.incident-card:hover {
-  box-shadow: 0 0 20px rgba(255, 255, 0, 0.7);
-  /* Glow effect on hover */
+.icon {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+}
+
+.status-high {
+  border-left: 8px solid #e57373;
+}
+
+.status-medium {
+  border-left: 8px solid #ffb74d;
+}
+
+.status-low {
+  border-left: 8px solid #81c784;
 }
