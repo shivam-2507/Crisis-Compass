@@ -26,20 +26,22 @@ except OSError:
 # Emergency keywords and severity points
 EMERGENCY_KEYWORDS = {
     "hurricane": 5,
-    "accident": 3,
-    "injury": 4,
-    "emergency": 5,
-    "rescue": 4,
+    "accident": 2,
+    "injury": 2,
+    "emergency": 7,
+    "rescue": 1,
     "evacuation": 4,
-    "chemical spill": 5,
-    "flood": 5,
+    "chemical spill": 7,
+    "flood": 2,
     "fire": 5,
     "medical": 4,
-    "storm": 3,
-    "casualty": 5,
-    "disaster": 5,
-    "critical": 4,
-    "danger": 4
+    "storm": 2,
+    "casualty": 6,
+    "disaster": 7,
+    "critical": 6,
+    "danger": 4,
+    "lost": 1,
+    "Missing": 1
 }
 
 # Trust-related keywords and trust points
@@ -52,9 +54,9 @@ TRUST_KEYWORDS = {
 }
 
 def get_severity_level(points):
-    if points >= 8:
+    if points >= 35:
         return "high"
-    elif points >= 5:
+    elif points >= 20:
         return "medium"
     else:
         return "low"
