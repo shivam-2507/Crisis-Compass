@@ -1,4 +1,5 @@
 #root {
+  margin-top: 30px;
   width: 100%;
   background: linear-gradient(135deg, #000000, #3b82f6);
   min-height: 100vh;
@@ -10,101 +11,79 @@
   gap: 2rem;
 }
 
+/* Header styles */
+#header {
+  width: 97%;
+  padding: 1rem 2rem;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background: linear-gradient(135deg, #000000, #3b82f6);
+  z-index: 10;
+}
+
 /* Logo styling */
 .logo {
-  font-size: 2.5rem;
-  padding: 0.5rem 1rem;
-  transition: filter 300ms;
-  cursor: pointer;
+  color: #ffffff;
+  font-weight: bold;
 }
 
-.logo:hover {
-  filter: drop-shadow(0 0 2em #ffffff);
+/* Menu button styling */
+.menu button {
+  color: white;
+  font-weight: bold;
+  margin-left: 1rem;
 }
 
-/*@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}*/
-
-@media (prefers-reduced-motion: no-preference) {
-  .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+/* Glow effect cursor */
+#glow-cursor {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background-color: #ff4081;
+  position: absolute;
+  pointer-events: none;
+  transition: transform 0.1s ease;
+  mix-blend-mode: difference;
 }
 
-/* Card styling */
+/* Card and heading styling */
+.heading {
+  color: white;
+  text-align: center;
+}
+
 .card {
   background-color: white;
   color: black;
-  padding: 2rem;
+  padding: 1.5rem;
   border-radius: 10px;
-  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
   width: 100%;
-  max-width: 500px;
-  margin: 0 auto;
+  max-width: 600px;
 }
 
-/* Button styling */
-button {
-  background: linear-gradient(90deg, #ff8a00, #ff2a6d);
-  color: white;
-  font-weight: bold;
-  border: none;
-  padding: 0.8rem 1.5rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-button:hover {
-  background: linear-gradient(90deg, #ff2a6d, #ff8a00);
-}
-
-/* Badge styling */
-.status-badge {
-  padding: 0.3rem 0.6rem;
-  border-radius: 5px;
-  font-weight: bold;
-  color: black;
-}
-
-.status-high {
-  background-color: #ff5252;
-}
-
-.status-medium {
-  background-color: #ffa726;
-}
-
-.status-low {
-  background-color: #66bb6a;
-}
-
-/* Incident list styling */
 .active-incidents {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
   width: 100%;
-  max-width: 500px;
+  max-width: 600px;
 }
 
 .incident-card {
-  border-left: 4px solid;
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  transition: box-shadow 0.3s ease;
-  cursor: pointer;
-  width: 100%;
+  margin-top: 1rem;
 }
 
-.incident-card:hover {
-  box-shadow: 0 0 12px rgba(0, 0, 255, 0.3);
+.icon {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+}
+
+.status-high {
+  border-left: 8px solid #e57373;
+}
+
+.status-medium {
+  border-left: 8px solid #ffb74d;
+}
+
+.status-low {
+  border-left: 8px solid #81c784;
 }
