@@ -141,7 +141,7 @@ const CrisisCompass = () => {
                       <span style={{ marginRight: '8px' }}>{incidentIcons[incident.type]}</span>{incident.title}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" fontWeight={"bold"}> 
-                        {"Place: " + incident.location.charAt(0).toUpperCase() + incident.location.slice(1)}</Typography>
+                        {"Place: " + incident.location.toUpperCase()}</Typography>
                     <Typography variant="body2" color="text.secondary" mt={1}>{incident.description}</Typography>
                     <Typography variant="caption" color="text.secondary" mt={1}>{incident.timestamp}</Typography>
                   </Box>
