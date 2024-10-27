@@ -12,13 +12,15 @@ const CrisisCompass = () => {
   const [error, setError] = useState(null);
   const [showLabel, setShowLabel] = useState(true);
 
+  // Define emojis directly and ensure they are accessible based on specific types
   const incidentIcons = {
-    fire: '🔥',
-    medical: '🚑',
-    flood: '🌊',
-    chemical: '☢️',
-    storm: '🌩️',
-    general: '⚠️',
+    fire: '🔥',       // Fire symbol
+    medical: '🚑',    // Ambulance
+    flood: '🌊',      // Water wave
+    chemical: '☢️',  // Radioactive
+    storm: '⛈️',     // Thunder cloud
+    general: '⚠️',    // Warning
+    default: '⚠️',    // Fallback symbol
   };
 
   useEffect(() => {
@@ -131,47 +133,56 @@ const CrisisCompass = () => {
         <Typography variant="h4" fontWeight="bold" mb={2} sx={{ color: "#ffffff" }}>Active Incidents</Typography>
         {incidents
           .sort((a, b) => b.points - a.points)
-          .map((incident) => (
-            <Card key={incident.id} className={`incident-card status-${incident.severity}`} sx={{ mb: 2, backgroundColor: "#f9f9f9", borderRadius: "8px" }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                  <Box>
-                    {/* Remove extra space around title */}
-                    <Typography variant="body1" fontWeight="bold" sx={{ margin: 0, padding: 0, display: 'flex', alignItems: 'center' }}> 
-                      <span style={{ marginRight: '8px' }}>{incidentIcons[incident.type]}</span>{incident.title}
+          .map((incident) => {
+            const iconType = (incident.type || 'general').trim().toLowerCase();
+            console.log(`Incident type: ${iconType}`);  // Debugging line to check the type
+
+            return (
+              <Card key={incident.id} className={`incident-card status-${incident.severity}`} sx={{ mb: 2, backgroundColor: "#f9f9f9", borderRadius: "8px" }}>
+                <CardContent>
+                  <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                    <Box>
+                      {/* Display icon next to title, using fallback if type is undefined */}
+                      <Typography variant="body1" fontWeight="bold" sx={{ margin: 0, padding: 0, display: 'flex', alignItems: 'center' }}> 
+                        <span className="icon" style={{ marginRight: '8px' }}>
+                          {incidentIcons[iconType] || incidentIcons.default}
+                        </span>
+                        {incident.title}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" fontWeight={"bold"}> 
-                        {"Place: " + incident.location.toUpperCase()}</Typography>
-                    <Typography variant="body2" color="text.secondary" mt={1}>{incident.description}</Typography>
-                    <Typography variant="caption" color="text.secondary" mt={1}>{incident.timestamp}</Typography>
+                        {"Place: " + incident.location.toUpperCase()}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" mt={1}>{incident.description}</Typography>
+                      <Typography variant="caption" color="text.secondary" mt={1}>{incident.timestamp}</Typography>
+                    </Box>
+                    <Box textAlign="right">
+                      {/* Fixed Badge Layout */}
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: 'inline-block',
+                          px: 2,
+                          py: 0.5,
+                          borderRadius: '8px',
+                          color: 'white',
+                          backgroundColor:
+                            incident.severity === 'high' ? '#e57373' :
+                            incident.severity === 'medium' ? '#ffb74d' :
+                            '#81c784',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {incident.severity.toUpperCase()} - {incident.points} pts
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" mt={1} display="block">
+                        Trust Score: {incident.trustScore}%
+                      </Typography>
+                    </Box>
                   </Box>
-                  <Box textAlign="right">
-                    {/* Fixed Badge Layout */}
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        display: 'inline-block',
-                        px: 2,
-                        py: 0.5,
-                        borderRadius: '8px',
-                        color: 'white',
-                        backgroundColor:
-                          incident.severity === 'high' ? '#e57373' :
-                          incident.severity === 'medium' ? '#ffb74d' :
-                          '#81c784',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {incident.severity.toUpperCase()} - {incident.points} pts
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" mt={1} display="block">
-                      Trust Score: {incident.trustScore}%
-                    </Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
       </Box>
     </Box>
   );
