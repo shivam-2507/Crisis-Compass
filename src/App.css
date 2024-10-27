@@ -1,42 +1,111 @@
+/* Root container styling */
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
+  width: 100%;
+  background: linear-gradient(135deg, #000000, #3b82f6);
+  min-height: 100vh;
   padding: 2rem;
-  text-align: center;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
 }
 
+/* Logo styling */
 .logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
+  font-size: 2.5rem;
+  padding: 0.5rem 1rem;
   transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+  cursor: pointer;
 }
 
-@keyframes logo-spin {
+.logo:hover {
+  filter: drop-shadow(0 0 2em #ffffff);
+}
+
+/*@keyframes logo-spin {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
-}
+}*/
 
 @media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
+  .logo {
     animation: logo-spin infinite 20s linear;
   }
 }
 
+/* Card styling */
 .card {
-  padding: 2em;
+  background-color: white;
+  color: black;
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
 }
 
-.read-the-docs {
-  color: #888;
+/* Button styling */
+button {
+  background: linear-gradient(90deg, #ff8a00, #ff2a6d);
+  color: white;
+  font-weight: bold;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  background: linear-gradient(90deg, #ff2a6d, #ff8a00);
+}
+
+/* Badge styling */
+.status-badge {
+  padding: 0.3rem 0.6rem;
+  border-radius: 5px;
+  font-weight: bold;
+  color: black;
+}
+
+.status-high {
+  background-color: #ff5252;
+}
+
+.status-medium {
+  background-color: #ffa726;
+}
+
+.status-low {
+  background-color: #66bb6a;
+}
+
+/* Incident list styling */
+.active-incidents {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 500px;
+}
+
+.incident-card {
+  border-left: 4px solid;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+  cursor: pointer;
+  width: 100%;
+}
+
+.incident-card:hover {
+  box-shadow: 0 0 12px rgba(0, 0, 255, 0.3);
 }

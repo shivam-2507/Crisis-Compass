@@ -4,6 +4,7 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import { Box, Button, TextField, MenuItem } from '@mui/material';
 import './App.css';
+import './App.css';
 
 const CrisisCompass = () => {
   const [incidents, setIncidents] = useState([
@@ -110,6 +111,9 @@ const CrisisCompass = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setNewIncident((prev) => ({ ...prev, [name]: value }));
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewIncident((prev) => ({ ...prev, [name]: value }));
   };
 
   return (
@@ -140,6 +144,7 @@ const CrisisCompass = () => {
         <Typography variant="h6" fontWeight="bold">Active Incidents</Typography>
         {incidents.map((incident) => (
           <Card key={incident.id} className={`incident-card status-${incident.severity}`}>
+          <Card key={incident.id} className={`incident-card status-${incident.severity}`}>
             <CardContent>
               <Typography variant="body1" fontWeight="bold">
                 <span className="icon">🔥</span> {/* Optional: Replace with an icon library or emoji */}
@@ -163,3 +168,4 @@ const CrisisCompass = () => {
 };
 
 export default CrisisCompass;
+
