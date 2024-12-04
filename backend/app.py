@@ -42,6 +42,8 @@ EMERGENCY_KEYWORDS = {
     "danger": 4,
     "lost": 1,
     "Missing": 1
+    "flame": 5,
+    "acid rain": 6
 }
 
 # Trust-related keywords and trust points
@@ -51,6 +53,8 @@ TRUST_KEYWORDS = {
     "official": 8,
     "reported": 5,
     "estimated": 3
+    "testified": 4,
+    "accounted": 2,
 }
 
 def get_severity_level(points):
