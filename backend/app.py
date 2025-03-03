@@ -10,17 +10,23 @@ import spacy
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
+
+
+# Allow requests from http://localhost:5173
+CORS(app, origins=["http://localhost:5173"])
+
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Initialize spaCy
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
-    logger.error("spaCy model not found. Run: python -m spacy download en_core_web_sm")
+    logger.error(
+        "spaCy model not found. Run: python -m spacy download en_core_web_sm")
     raise
 
 # Emergency keywords and severity points
@@ -41,7 +47,7 @@ EMERGENCY_KEYWORDS = {
     "critical": 6,
     "danger": 4,
     "lost": 1,
-    "Missing": 1
+    "Missing": 1,
     "flame": 5,
     "acid rain": 6
 }
@@ -52,10 +58,11 @@ TRUST_KEYWORDS = {
     "verified": 10,
     "official": 8,
     "reported": 5,
-    "estimated": 3
+    "estimated": 3,
     "testified": 4,
     "accounted": 2,
 }
+
 
 def get_severity_level(points):
     if points >= 35:
@@ -65,14 +72,15 @@ def get_severity_level(points):
     else:
         return "low"
 
+
 def get_trust_score(trust_points, base_score=50):
     """
     Calculate the trust score based on trust-related keywords.
-    
+
     Parameters:
         trust_points (int): Total points from trust-related keywords.
         base_score (int): The base trust score before adjustments.
-    
+
     Returns:
         int: Adjusted trust score, capped between 0 and 100.
     """
@@ -80,6 +88,7 @@ def get_trust_score(trust_points, base_score=50):
     # Ensure trust score is between 0 and 100
     trust_score = max(min(trust_score, 100), 0)
     return trust_score
+
 
 def can_fetch(url, user_agent='*'):
     """
@@ -99,9 +108,10 @@ def can_fetch(url, user_agent='*'):
         rp.set_url(robots_url)
         rp.read()
         return rp.can_fetch(user_agent, url)
-    except Exception as e:
-        logger.warning(f"Could not read robots.txt for {url}: {e}")
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        logger.warning("Could not read robots.txt for %s: %s", url, e)
         return False
+
 
 def extract_emergency_info(text):
     """
@@ -152,8 +162,10 @@ def extract_emergency_info(text):
         'trustScore': trust_score
     }
 
+
 # In-memory storage for incidents (For demonstration purposes)
 incidents_db = []
+
 
 @app.route('/scrape', methods=['POST'])
 def scrape_url():
@@ -201,9 +213,10 @@ def scrape_url():
 
         return jsonify(incident)
 
-    except Exception as e:
-        logger.error(f"Error scraping URL: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        logger.error("Error scraping URL: %s", str(e))
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/get-incidents', methods=['GET'])
 def get_incidents():
@@ -211,6 +224,7 @@ def get_incidents():
     Endpoint to retrieve all incidents.
     """
     return jsonify(incidents_db)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
