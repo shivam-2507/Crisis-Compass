@@ -1,191 +1,173 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Typography, Button, TextField } from '@mui/material';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import axios from 'axios';
-import './App.css';
+"use client"
 
-const CrisisCompass = () => {
-  const [incidents, setIncidents] = useState([]);
-  const [url, setUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [showLabel, setShowLabel] = useState(true);
+import { useState, useEffect } from "react"
+import axios from "axios"
+import "./App.css"
+import { Home, AlertTriangle, FileText, Settings } from "lucide-react"
 
-  // Define emojis directly and ensure they are accessible based on specific types
+function App() {
+  const [url, setUrl] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [incidents, setIncidents] = useState([])
+
+  // Define emojis for incident types
   const incidentIcons = {
-    fire: '🔥',       // Fire symbol
-    medical: '🚑',    // Ambulance
-    flood: '🌊',      // Water wave
-    chemical: '☢️',  // Radioactive
-    storm: '⛈️',     // Thunder cloud
-    general: '⚠️',    // Warning
-    default: '⚠️',    // Fallback symbol
-  };
+    fire: "🔥",
+    medical: "🚑",
+    flood: "🌊",
+    chemical: "☢️",
+    storm: "⛈️",
+    general: "⚠️",
+    default: "⚠️",
+  }
 
+  // Fetch initial incidents on component mount
   useEffect(() => {
     const fetchIncidents = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/get-incidents');
-        setIncidents(response.data);
+        const response = await axios.get("http://localhost:5000/get-incidents")
+        setIncidents(response.data)
       } catch (err) {
-        console.error('Error fetching incidents:', err);
+        console.error("Error fetching incidents:", err)
+        setError("Failed to load incidents")
       }
-    };
-    fetchIncidents();
-  }, []);
+    }
 
+    fetchIncidents()
+  }, [])
+
+  // Handle URL scraping
   const scrapeUrl = async () => {
     if (!url) {
-      setError("Please enter a URL");
-      return;
+      setError("Please enter a URL")
+      return
     }
-    setError(null);
-    setLoading(true);
+    setError(null)
+    setLoading(true)
     try {
-      const response = await axios.post('http://localhost:5000/scrape', { url });
+      const response = await axios.post("http://localhost:5000/scrape", { url })
       if (response.data.error) {
-        throw new Error(response.data.error);
+        throw new Error(response.data.error)
       }
-      const incidentData = response.data;
-      setIncidents(prev => [...prev, incidentData]);
-      setUrl('');
+      const incidentData = response.data
+      setIncidents((prev) => [...prev, incidentData])
+      setUrl("")
     } catch (err) {
-      console.error('Error scraping URL:', err);
-      setError(err.response?.data?.error || 'Failed to scrape URL');
+      console.error("Error scraping URL:", err)
+      setError(err.response?.data?.error || "Failed to scrape URL")
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    scrapeUrl()
+  }
+
+  // Sort incidents by points (highest first)
+  const sortedIncidents = [...incidents].sort((a, b) => b.points - a.points)
 
   return (
-    <Box id="root" sx={{ backgroundColor: "#ffffff", color: "#333333", minHeight: "100vh", padding: "2rem" }}>
-      {/* Black Top Bar */}
-      <Box
-        id="header"
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        width="100%"
-        mb={4}
-        sx={{
-          backgroundColor: "black",
-          padding: "1rem",
-          borderRadius: "8px"
-        }}
-      >
-        <Typography variant="h3" fontWeight="bold" sx={{ color: "#ffffff" }}>
-          CrisisCompass
-        </Typography>
-        
-        {/* Thinner, Rounder, Centered Search Bar */}
-        <TextField
-          type="url"
-          label={showLabel ? "Enter Incident URL or Search" : ""}
-          variant="outlined"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          onFocus={() => setShowLabel(false)}
-          onBlur={() => setShowLabel(true)}
-          sx={{
-            backgroundColor: "#f0f0f0",
-            borderRadius: "16px",
-            width: "25%",
-            height: "50px",
-            marginRight: "16px",
-            boxShadow: "none",
-            '.MuiOutlinedInput-root': {
-              '& fieldset': {
-                border: 'none',
-              },
-            },
-          }}
-          InputProps={{
-            style: {
-              padding: "0px 0px",
-              fontSize: "0.875rem",
-              lineHeight: "1.5",
-            },
-          }}
-        />
+      <div className="app">
+        {/* Header */}
+        <header className="header">
+          <div className="container header-container">
+            <h1 className="logo">CrisisCompass</h1>
 
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={scrapeUrl}
-          disabled={loading}
-          sx={{ backgroundColor: "#4A90E2", borderRadius: "8px", height: "36px", fontSize: "0.875rem" }}
-        >
-          {loading ? 'Loading...' : 'Rank'}
-        </Button>
+            <nav className="nav">
+              <button className="nav-button">
+                <Home className="icon" />
+                Home
+              </button>
+              <button className="nav-button">
+                <AlertTriangle className="icon" />
+                Incidents
+              </button>
+              <button className="nav-button">
+                <FileText className="icon" />
+                Reports
+              </button>
+              <button className="nav-button">
+                <Settings className="icon" />
+                Settings
+              </button>
+            </nav>
+          </div>
+        </header>
 
-        {/* Navbar Buttons without Sub-options */}
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button color="inherit" sx={{ color: "#ffffff" }}>Home</Button>
-          <Button color="inherit" sx={{ color: "#ffffff" }}>Incidents</Button>
-          <Button color="inherit" sx={{ color: "#ffffff" }}>Reports</Button>
-          <Button color="inherit" sx={{ color: "#ffffff" }}>Settings</Button>
-        </Box>
-      </Box>
+        {/* Main content */}
+        <main className="main container">
+          {/* Centered URL input box */}
+          <div className="input-container">
+            <div className="input-card">
+              <h2 className="input-title">Crisis Incident Ranking</h2>
+              <form onSubmit={handleSubmit} className="input-form">
+                <div className="input-wrapper">
+                  <input
+                      type="url"
+                      placeholder="Enter incident URL to analyze"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      className="url-input"
+                  />
+                  <button type="submit" className="submit-button" disabled={loading}>
+                    {loading ? "..." : "→"}
+                  </button>
+                </div>
+                {error && <p className="error-message">{error}</p>}
+                <p className="helper-text">Enter a URL to an incident report to analyze and rank its severity</p>
+              </form>
+            </div>
+          </div>
 
-      {/* Display Active Incidents */}
-      <Box className="active-incidents" mt={4}>
-        <Typography variant="h4" fontWeight="bold" mb={2} sx={{ color: "#ffffff" }}>Active Incidents</Typography>
-        {incidents
-          .sort((a, b) => b.points - a.points)
-          .map((incident) => {
-            const iconType = (incident.type || 'general').trim().toLowerCase();
-            console.log(`Incident type: ${iconType}`);  // Debugging line to check the type
+          {/* Incident listings */}
+          <div className="incidents-container">
+            <h2 className="incidents-title">
+              Active Incidents {loading && <span className="loading-indicator">Loading...</span>}
+            </h2>
 
-            return (
-              <Card key={incident.id} className={`incident-card status-${incident.severity}`} sx={{ mb: 2, backgroundColor: "#f9f9f9", borderRadius: "8px" }}>
-                <CardContent>
-                  <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                    <Box>
-                      {/* Display icon next to title, using fallback if type is undefined */}
-                      <Typography variant="body1" fontWeight="bold" sx={{ margin: 0, padding: 0, display: 'flex', alignItems: 'center' }}> 
-                        <span className="icon" style={{ marginRight: '8px' }}>
-                          {incidentIcons[iconType] || incidentIcons.default}
+            {incidents.length === 0 && !loading ? (
+                <div className="no-incidents">
+                  <p>No incidents found. Enter a URL above to analyze an incident.</p>
+                </div>
+            ) : (
+                <div className="incidents-list">
+                  {sortedIncidents.map((incident) => {
+                    const iconType = (incident.type || "general").toLowerCase()
+                    const severityClass = `incident-card severity-${incident.severity}`
+
+                    return (
+                        <div key={incident.id} className={severityClass}>
+                          <div className="incident-content">
+                            <div className="incident-info">
+                              <div className="incident-header">
+                                <span className="incident-icon">{incidentIcons[iconType] || incidentIcons.default}</span>
+                                <h3 className="incident-title">{incident.title}</h3>
+                              </div>
+                              <p className="incident-location">PLACE: {incident.location.toUpperCase()}</p>
+                              <p className="incident-description">{incident.description}</p>
+                              <p className="incident-timestamp">{incident.timestamp}</p>
+                            </div>
+
+                            <div className="incident-metrics">
+                        <span className={`incident-severity severity-badge-${incident.severity}`}>
+                          {incident.severity.toUpperCase()} - {incident.points} pts
                         </span>
-                        {incident.title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" fontWeight={"bold"}> 
-                        {"Place: " + incident.location.toUpperCase()}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" mt={1}>{incident.description}</Typography>
-                      <Typography variant="caption" color="text.secondary" mt={1}>{incident.timestamp}</Typography>
-                    </Box>
-                    <Box textAlign="right">
-                      {/* Fixed Badge Layout */}
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          display: 'inline-block',
-                          px: 2,
-                          py: 0.5,
-                          borderRadius: '8px',
-                          color: 'white',
-                          backgroundColor:
-                            incident.severity === 'high' ? '#e57373' :
-                            incident.severity === 'medium' ? '#ffb74d' :
-                            '#81c784',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {incident.severity.toUpperCase()} - {incident.points} pts
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" mt={1} display="block">
-                        Trust Score: {incident.trustScore}%
-                      </Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            );
-          })}
-      </Box>
-    </Box>
-  );
-};
+                              <p className="incident-trust">Trust Score: {incident.trustScore}%</p>
+                            </div>
+                          </div>
+                        </div>
+                    )
+                  })}
+                </div>
+            )}
+          </div>
+        </main>
+      </div>
+  )
+}
 
-export default CrisisCompass;
+export default App
+

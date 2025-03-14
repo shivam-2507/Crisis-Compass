@@ -16,6 +16,8 @@
     "axios": "^1.7.7",
     "cors": "^2.8.5",
     "crisis-compass": "file:",
+    "lucide": "^0.482.0",
+    "lucide-react": "^0.482.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
