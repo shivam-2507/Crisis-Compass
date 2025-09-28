@@ -3,13 +3,15 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
 import "./App.css"
-import { Home, AlertTriangle, FileText, Settings } from "lucide-react"
+import { Home, AlertTriangle, FileText, Settings, MapPin, RefreshCw } from "lucide-react"
 
 function App() {
-  const [url, setUrl] = useState("")
+  const [location, setLocation] = useState(null)
+  const [locationError, setLocationError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [incidents, setIncidents] = useState([])
+  const [isLocationDetecting, setIsLocationDetecting] = useState(true)
 
   // Define emojis for incident types
   const incidentIcons = {
@@ -22,48 +24,84 @@ function App() {
     default: "⚠️",
   }
 
-  // Fetch initial incidents on component mount
+  // Auto-detect location and fetch local incidents on component mount
   useEffect(() => {
-    const fetchIncidents = async () => {
+    const detectLocationAndFetchIncidents = async () => {
       try {
-        const response = await axios.get("http://localhost:5000/get-incidents")
-        setIncidents(response.data)
+        // Get user's location
+        const position = await new Promise((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error('Geolocation is not supported by this browser'))
+            return
+          }
+          
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 300000 // 5 minutes
+            }
+          )
+        })
+
+        const { latitude, longitude } = position.coords
+        setLocation({ latitude, longitude })
+        setIsLocationDetecting(false)
+
+        // Fetch local incidents based on location
+        await fetchLocalIncidents(latitude, longitude)
       } catch (err) {
-        console.error("Error fetching incidents:", err)
-        setError("Failed to load incidents")
+        console.error("Error detecting location:", err)
+        setLocationError("Unable to detect your location. Please enable location services.")
+        setIsLocationDetecting(false)
+        
+        // Fallback: fetch general incidents
+        await fetchIncidents()
       }
     }
 
-    fetchIncidents()
+    detectLocationAndFetchIncidents()
   }, [])
 
-  // Handle URL scraping
-  const scrapeUrl = async () => {
-    if (!url) {
-      setError("Please enter a URL")
-      return
-    }
-    setError(null)
+  // Fetch local incidents based on coordinates
+  const fetchLocalIncidents = async (lat, lng) => {
     setLoading(true)
     try {
-      const response = await axios.post("http://localhost:5000/scrape", { url })
-      if (response.data.error) {
-        throw new Error(response.data.error)
-      }
-      const incidentData = response.data
-      setIncidents((prev) => [...prev, incidentData])
-      setUrl("")
+      const response = await axios.post("http://localhost:5000/get-local-incidents", {
+        latitude: lat,
+        longitude: lng
+      })
+      setIncidents(response.data)
     } catch (err) {
-      console.error("Error scraping URL:", err)
-      setError(err.response?.data?.error || "Failed to scrape URL")
+      console.error("Error fetching local incidents:", err)
+      setError("Failed to load local incidents")
+      // Fallback to general incidents
+      await fetchIncidents()
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    scrapeUrl()
+  // Fetch general incidents (fallback)
+  const fetchIncidents = async () => {
+    try {
+      const response = await axios.get("http://localhost:5000/get-incidents")
+      setIncidents(response.data)
+    } catch (err) {
+      console.error("Error fetching incidents:", err)
+      setError("Failed to load incidents")
+    }
+  }
+
+  // Refresh local incidents
+  const refreshIncidents = async () => {
+    if (location) {
+      await fetchLocalIncidents(location.latitude, location.longitude)
+    } else {
+      await fetchIncidents()
+    }
   }
 
   // Sort incidents by points (highest first)
@@ -99,38 +137,46 @@ function App() {
 
         {/* Main content */}
         <main className="main container">
-          {/* Centered URL input box */}
-          <div className="input-container">
-            <div className="input-card">
-              <h2 className="input-title">Crisis Incident Ranking</h2>
-              <form onSubmit={handleSubmit} className="input-form">
-                <div className="input-wrapper">
-                  <input
-                      type="url"
-                      placeholder="Enter incident URL to analyze"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      className="url-input"
-                  />
-                  <button type="submit" className="submit-button" disabled={loading}>
-                    {loading ? "..." : "→"}
+          {/* Location and Dashboard Header */}
+          <div className="dashboard-header">
+            <div className="location-info">
+              {isLocationDetecting ? (
+                <div className="location-detecting">
+                  <RefreshCw className="icon spinning" />
+                  <span>Detecting your location...</span>
+                </div>
+              ) : location ? (
+                <div className="location-detected">
+                  <MapPin className="icon" />
+                  <span>Monitoring incidents near you</span>
+                  <button onClick={refreshIncidents} className="refresh-button" disabled={loading}>
+                    <RefreshCw className={`icon ${loading ? 'spinning' : ''}`} />
+                    Refresh
                   </button>
                 </div>
-                {error && <p className="error-message">{error}</p>}
-                <p className="helper-text">Enter a URL to an incident report to analyze and rank its severity</p>
-              </form>
+              ) : (
+                <div className="location-error">
+                  <MapPin className="icon" />
+                  <span>{locationError || "Location not available"}</span>
+                  <button onClick={refreshIncidents} className="refresh-button" disabled={loading}>
+                    <RefreshCw className={`icon ${loading ? 'spinning' : ''}`} />
+                    Load General Incidents
+                  </button>
+                </div>
+              )}
             </div>
+            {error && <p className="error-message">{error}</p>}
           </div>
 
           {/* Incident listings */}
           <div className="incidents-container">
             <h2 className="incidents-title">
-              Active Incidents {loading && <span className="loading-indicator">Loading...</span>}
+              {location ? "Local Incidents" : "Recent Incidents"} {loading && <span className="loading-indicator">Loading...</span>}
             </h2>
 
             {incidents.length === 0 && !loading ? (
                 <div className="no-incidents">
-                  <p>No incidents found. Enter a URL above to analyze an incident.</p>
+                  <p>{location ? "No local incidents found. The area appears to be safe." : "No incidents found. Monitoring for new reports..."}</p>
                 </div>
             ) : (
                 <div className="incidents-list">
