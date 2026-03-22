@@ -5,13 +5,14 @@ from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
 import urllib.robotparser
+import urllib.error
+from urllib.parse import quote_plus
 import logging
 import spacy
 from datetime import datetime
 import feedparser
 import re
 from geopy.geocoders import Nominatim
-from geopy.distance import geodesic
 
 app = Flask(__name__)
 
@@ -51,7 +52,7 @@ EMERGENCY_KEYWORDS = {
     "critical": 6,
     "danger": 4,
     "lost": 1,
-    "Missing": 1,
+    "missing": 1,
     "flame": 5,
     "acid rain": 6
 }
@@ -266,13 +267,23 @@ def get_local_incidents():
         
         logger.info(f"Detected location: {location_name}")
         
+        address = location.raw.get("address", {}) if location and getattr(location, "raw", None) else {}
         # Extract city/region name for news search
-        city_name = extract_city_name(location_name)
-        logger.info(f"Extracted city name: {city_name}")
-        
+        city_name = extract_city_name(location_name, address)
+        region = (
+            address.get("state")
+            or address.get("province")
+            or address.get("region")
+            or ""
+        )
+        country_code = (address.get("country_code") or "ca").upper()
+        logger.info(f"Extracted city name: {city_name}, region: {region}, country: {country_code}")
+
         # Scrape local news
         logger.info(f"Starting news scraping for city: {city_name}")
-        local_incidents = scrape_local_news(city_name, latitude, longitude)
+        local_incidents = scrape_local_news(
+            city_name, latitude, longitude, region=region, country_code=country_code
+        )
         logger.info(f"Found {len(local_incidents)} incidents")
         
         # Add to incidents database
@@ -356,95 +367,152 @@ def is_recent_web_article(article, title):
         return True
 
 
-def extract_city_name(location_string):
+def extract_city_name(location_string, address=None):
     """
-    Extract city name from full location string.
+    Extract city name from Nominatim address dict or full location string.
     """
+    if address:
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("municipality")
+            or address.get("hamlet")
+        )
+        if city:
+            return city.strip()
+
     if not location_string:
         return "Unknown"
-    
-    # Split by comma and take the first part (usually city)
-    parts = location_string.split(',')
-    city = parts[0].strip()
-    
-    # If we get a very specific location like "South Campus", try to get a broader area
-    if any(keyword in city.lower() for keyword in ['campus', 'university', 'college', 'school']):
-        # Look for the actual city name in the address
+
+    parts = [p.strip() for p in location_string.split(",")]
+    city = parts[0] if parts else "Unknown"
+
+    if any(keyword in city.lower() for keyword in ["campus", "university", "college", "school"]):
         for part in parts:
-            part = part.strip()
-            # Look for common city indicators
-            if any(indicator in part.lower() for indicator in ['waterloo', 'toronto', 'ottawa', 'vancouver', 'montreal', 'calgary', 'edmonton']):
+            if any(
+                indicator in part.lower()
+                for indicator in [
+                    "waterloo",
+                    "toronto",
+                    "ottawa",
+                    "vancouver",
+                    "montreal",
+                    "calgary",
+                    "edmonton",
+                ]
+            ):
                 return part
-            # Look for state/province names that might indicate the city
-            if any(province in part.lower() for province in ['ontario', 'quebec', 'british columbia', 'alberta']):
-                # Try to find the city name before the province
-                for i, p in enumerate(parts):
-                    if province in p.lower() and i > 0:
-                        return parts[i-1].strip()
-    
+        provinces = ["ontario", "quebec", "british columbia", "alberta"]
+        for i, part in enumerate(parts):
+            if any(province in part.lower() for province in provinces):
+                if i > 0:
+                    return parts[i - 1].strip()
+
     return city
 
 
-def get_news_sources(city_name):
+def _google_news_rss_url(query, country_code="CA"):
+    """Build a Google News RSS URL with proper encoding and region."""
+    cc = (country_code or "CA").upper()
+    if cc == "US":
+        hl, gl, ceid = "en", "US", "US:en"
+    elif cc == "GB":
+        hl, gl, ceid = "en", "GB", "GB:en"
+    else:
+        hl, gl, ceid = "en", "CA", "CA:en"
+    q = quote_plus(query)
+    return f"https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}"
+
+
+def get_news_sources(city_name, region_hint=None, country_code="CA"):
     """
     Get comprehensive list of news sources for a given city.
+    Queries are URL-encoded; region uses the user's province/state when available.
     """
-    # Location-specific news sources (prioritize local over global)
+    region_hint = (region_hint or "").strip()
+    cc = (country_code or "CA").upper()
+
     sources = [
-        # Local news sources first - using RSS feeds instead of web scraping for better reliability
         {
-            'name': f'Google News - {city_name} Local',
-            'url': f'https://news.google.com/rss/search?q={city_name}+local+news&hl=en&gl=CA&ceid=CA:en',
-            'type': 'rss',
-            'category': 'local'
+            "name": f"Google News - {city_name} Local",
+            "url": _google_news_rss_url(f"{city_name} local news", cc),
+            "type": "rss",
+            "category": "local",
         },
         {
-            'name': f'Google News - {city_name} Emergency',
-            'url': f'https://news.google.com/rss/search?q={city_name}+emergency+disaster+incident&hl=en&gl=CA&ceid=CA:en',
-            'type': 'rss',
-            'category': 'local'
+            "name": f"Google News - {city_name} Emergency",
+            "url": _google_news_rss_url(
+                f"{city_name} emergency OR disaster OR incident", cc
+            ),
+            "type": "rss",
+            "category": "local",
         },
         {
-            'name': f'Google News - {city_name} Breaking',
-            'url': f'https://news.google.com/rss/search?q={city_name}+breaking+news&hl=en&gl=CA&ceid=CA:en',
-            'type': 'rss',
-            'category': 'local'
+            "name": f"Google News - {city_name} Breaking",
+            "url": _google_news_rss_url(f"{city_name} breaking news", cc),
+            "type": "rss",
+            "category": "local",
         },
         {
-            'name': f'Google News - {city_name} Fire Police',
-            'url': f'https://news.google.com/rss/search?q={city_name}+fire+police+emergency&hl=en&gl=CA&ceid=CA:en',
-            'type': 'rss',
-            'category': 'local'
+            "name": f"Google News - {city_name} Fire Police",
+            "url": _google_news_rss_url(
+                f"{city_name} fire OR police OR ambulance OR 911", cc
+            ),
+            "type": "rss",
+            "category": "local",
         },
-        # Add broader regional searches
-        {
-            'name': f'Google News - Waterloo Ontario',
-            'url': f'https://news.google.com/rss/search?q=waterloo+ontario+emergency&hl=en&gl=CA&ceid=CA:en',
-            'type': 'rss',
-            'category': 'regional'
-        },
-        {
-            'name': f'Google News - Ontario Emergency',
-            'url': f'https://news.google.com/rss/search?q=ontario+emergency+disaster&hl=en&gl=CA&ceid=CA:en',
-            'type': 'rss',
-            'category': 'regional'
-        },
-        # Canadian news sources
-        {
-            'name': 'CBC News Ontario',
-            'url': 'https://www.cbc.ca/cmlink/rss-topstories',
-            'type': 'rss',
-            'category': 'national'
-        },
-        {
-            'name': 'CTV News',
-            'url': 'https://www.ctvnews.ca/rss/ctvnews-ca-topstories-public-rss-1.822289',
-            'type': 'rss',
-            'category': 'national'
-        },
-        # Removed BBC World News fallback to avoid international news
     ]
-    
+
+    if region_hint:
+        sources.append(
+            {
+                "name": f"Google News - {city_name} {region_hint}",
+                "url": _google_news_rss_url(
+                    f"{city_name} {region_hint} emergency OR accident", cc
+                ),
+                "type": "rss",
+                "category": "regional",
+            }
+        )
+        sources.append(
+            {
+                "name": f"Google News - {region_hint} Regional",
+                "url": _google_news_rss_url(
+                    f"{region_hint} emergency OR disaster OR severe weather", cc
+                ),
+                "type": "rss",
+                "category": "regional",
+            }
+        )
+
+    if cc == "CA":
+        sources.extend(
+            [
+                {
+                    "name": "CBC News Top Stories",
+                    "url": "https://www.cbc.ca/cmlink/rss-topstories",
+                    "type": "rss",
+                    "category": "national",
+                },
+                {
+                    "name": "Global News Canada",
+                    "url": "https://globalnews.ca/feed/",
+                    "type": "rss",
+                    "category": "national",
+                },
+            ]
+        )
+    elif cc == "US":
+        sources.append(
+            {
+                "name": "NPR News",
+                "url": "https://feeds.npr.org/1001/rss.xml",
+                "type": "rss",
+                "category": "national",
+            }
+        )
+
     return sources
 
 
@@ -565,65 +633,182 @@ def scrape_news_website(source, city_name):
     return incidents
 
 
-def scrape_local_news(city_name, latitude, longitude):
+def _strip_html(text):
+    if not text:
+        return ""
+    return BeautifulSoup(text, "html.parser").get_text(separator=" ", strip=True)
+
+
+def _local_relevance_boost(text, city_name, region):
+    """Boost score when headline/body clearly mentions the user's city or region."""
+    if not text:
+        return 0
+    t = text.lower()
+    boost = 0
+    city = (city_name or "").strip()
+    if len(city) >= 3 and city.lower() in t:
+        boost += 20
+    elif city:
+        for token in re.split(r"[\s,]+", city):
+            tok = token.strip().lower()
+            if len(tok) > 2 and tok in t:
+                boost += 12
+    reg = (region or "").strip()
+    if len(reg) >= 3 and reg.lower() in t:
+        boost += 10
+    return min(boost, 40)
+
+
+def _rss_item_relevant_to_area(category, emergency_points, local_boost, content, city_name):
+    """National feeds: keep stories that are local or clearly incident-related."""
+    c = (content or "").lower()
+    city = (city_name or "").strip().lower()
+    if category in ("local", "regional"):
+        return True
+    if emergency_points > 0:
+        return True
+    if local_boost >= 10:
+        return True
+    if city and len(city) >= 3 and city in c:
+        return True
+    return False
+
+
+def _fetch_rss_feed(url):
+    """Fetch RSS with a browser User-Agent so feeds (e.g. Google News) return entries."""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/rss+xml, application/xml, text/xml, */*;q=0.8",
+    }
+    response = requests.get(url, headers=headers, timeout=25)
+    response.raise_for_status()
+    return feedparser.parse(response.content)
+
+
+def _dedupe_key(entry):
+    link = getattr(entry, "link", "") or ""
+    title = getattr(entry, "title", "") or ""
+    if link:
+        return ("url", link.split("?")[0].strip().lower())
+    return ("title", title.strip().lower()[:120])
+
+
+def scrape_local_news(city_name, latitude, longitude, region=None, country_code="CA"):
     """
     Scrape local news sources for incidents in the specified area.
+    Ranks items by emergency NLP score plus local relevance (city/region in text).
     """
     incidents = []
-    logger.info(f"Scraping local news for city: {city_name}")
-    
-    # Multi-source news aggregation
-    news_sources = get_news_sources(city_name)
-    
+    seen = set()
+    region = region or ""
+    cc = (country_code or "CA").upper()
+    logger.info(f"Scraping local news for city: {city_name} (region={region}, cc={cc})")
+
+    news_sources = get_news_sources(city_name, region_hint=region, country_code=cc)
+
     for source in news_sources:
         try:
-            logger.info(f"Checking news source: {source['name']} - {source['url']}")
-            
-            if source['type'] == 'rss':
-                # Parse RSS feed
-                feed = feedparser.parse(source['url'])
-                logger.info(f"Found {len(feed.entries)} entries from {source['name']}")
-                
-                for entry in feed.entries[:10]:  # Limit to 10 most recent
-                    # Check if article is within the last week
+            logger.info("Checking news source: %s - %s", source["name"], source["url"])
+
+            if source["type"] == "rss":
+                feed = _fetch_rss_feed(source["url"])
+                logger.info(
+                    "Found %s entries from %s (bozo=%s)",
+                    len(feed.entries),
+                    source["name"],
+                    getattr(feed, "bozo", False),
+                )
+
+                for entry in feed.entries[:12]:
                     if not is_recent_article(entry):
-                        logger.info(f"Skipping old article: {entry.title[:50]}...")
                         continue
-                    
-                    # Extract content from the entry
-                    content = f"{entry.title} {entry.summary if hasattr(entry, 'summary') else ''}"
-                    logger.info(f"Processing local news: {content[:100]}...")
-                    
-                    # Add ALL local news from the last week, not just emergency-related
+
+                    title = (getattr(entry, "title", None) or "Untitled")[:200]
+                    summary_raw = ""
+                    if hasattr(entry, "summary"):
+                        summary_raw = entry.summary
+                    elif hasattr(entry, "description"):
+                        summary_raw = entry.description
+                    summary_plain = _strip_html(summary_raw)
+                    content = f"{title} {summary_plain}".strip()
+                    if not content:
+                        continue
+
+                    dk = _dedupe_key(entry)
+                    if dk in seen:
+                        continue
+                    seen.add(dk)
+
+                    emergency_info = extract_emergency_info(content)
+                    local_boost = _local_relevance_boost(content, city_name, region)
+                    category = source.get("category", "local")
+                    points = emergency_info["points"] + local_boost
+                    if points < 3:
+                        points = 3
+
+                    if not _rss_item_relevant_to_area(
+                        category,
+                        emergency_info["points"],
+                        local_boost,
+                        content,
+                        city_name,
+                    ):
+                        continue
+
+                    keywords = list(
+                        dict.fromkeys(
+                            emergency_info["keywords"] + ["local"]
+                        )
+                    )
+                    inc_type = (
+                        emergency_info["keywords"][0]
+                        if emergency_info["keywords"]
+                        else "local_news"
+                    )
+                    severity = get_severity_level(points)
+                    loc = city_name
+                    if (
+                        emergency_info.get("location")
+                        and emergency_info["location"] != "Unknown Location"
+                    ):
+                        loc = emergency_info["location"]
+
                     incident = {
-                        'id': len(incidents_db) + len(incidents) + 1,
-                        'type': 'local_news',
-                        'title': entry.title[:100],
-                        'location': city_name,
-                        'severity': 'low',
-                        'points': 5,  # Base points for local news
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
-                        'description': content[:200] + "...",
-                        'trustScore': 70,
-                        'keywords': ['local', 'news'],
-                        'source': source['name'],
-                        'url': entry.link if hasattr(entry, 'link') else ''
+                        "id": len(incidents_db) + len(incidents) + 1,
+                        "type": inc_type,
+                        "title": title[:100],
+                        "location": loc,
+                        "severity": severity,
+                        "points": points,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+                        "description": (content[:200] + "...")
+                        if len(content) > 200
+                        else content,
+                        "trustScore": emergency_info["trustScore"],
+                        "keywords": keywords,
+                        "source": source["name"],
+                        "url": entry.link if hasattr(entry, "link") else "",
                     }
                     incidents.append(incident)
-                    logger.info(f"Added local news: {incident['title']}")
-            
-            elif source['type'] == 'web_scrape':
-                # Use BeautifulSoup for web scraping
+                    logger.info(
+                        "Added: %s | points=%s (nlp=%s local_boost=%s)",
+                        title[:60],
+                        points,
+                        emergency_info["points"],
+                        local_boost,
+                    )
+
+            elif source["type"] == "web_scrape":
                 incidents_from_scraping = scrape_news_website(source, city_name)
                 incidents.extend(incidents_from_scraping)
-            
+
         except Exception as e:
-            logger.warning("Error scraping news source %s: %s", source['name'], str(e))
+            logger.warning("Error scraping news source %s: %s", source["name"], str(e))
             continue
-    
-    
-    # Removed broader search fallback to avoid international news
-    
+
     # Add sample incidents only if still no real incidents found
     if len(incidents) == 0:
         logger.info("No incidents found from any sources, adding sample incidents for testing")

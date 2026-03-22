@@ -74,11 +74,17 @@ function App() {
         longitude: lng
       })
       setIncidents(response.data)
+      setError(null)
     } catch (err) {
       console.error("Error fetching local incidents:", err)
       setError("Failed to load local incidents")
       // Fallback to general incidents
-      await fetchIncidents()
+      try {
+        await fetchIncidents()
+        setError(null)
+      } catch {
+        /* fetchIncidents already set error */
+      }
     } finally {
       setLoading(false)
     }
