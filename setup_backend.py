@@ -9,10 +9,12 @@ import sys
 import os
 
 def install_requirements():
-    """Install Python requirements from requirements.txt"""
+    """Install Python requirements from requirements.txt (cwd must be backend/)."""
     try:
         print("Installing Python dependencies...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "backend/requirements.txt"])
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
+        )
         print("✅ Python dependencies installed successfully!")
         
         # Download spaCy model

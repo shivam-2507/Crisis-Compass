@@ -1,154 +1,106 @@
 # CrisisCompass: Location-Based Emergency Monitoring System
 
-**CrisisCompass** is a web application that automatically detects your location and monitors local news sources for emergency situations and disasters. It uses semantic analysis to rank incidents by severity, providing a real-time dashboard of local emergencies with the most severe incidents at the top.
+**CrisisCompass** is a web application that uses your browser location to drive **server-side** news aggregation and keyword-based severity ranking. The dashboard shows a ranked list of incidents with trust heuristics; the heaviest work (scraping, NLP, scoring) runs on the **backend**, not in the browser.
 
 ---
 
 ## **Features**
 
-- **Automatic Location Detection**: Uses browser geolocation to detect your current location
-- **Local News Monitoring**: Automatically scrapes local news sources for emergency incidents
-- **Intelligent Severity Ranking**:
-  - Assigns severity scores based on emergency keywords and context
-  - Provides trust scores based on source reliability and keyword analysis
-  - Ranks incidents with most severe at the top
-- **Real-time Dashboard**:
-  - Displays local incidents with severity badges and trust scores
-  - Shows location-based emergency monitoring status
-  - Automatic refresh functionality for up-to-date information
-- **Smart Incident Analysis**:
-  - Categorizes incidents by type (fire, medical, flood, etc.)
-  - Extracts location information from news content
-  - Filters and ranks incidents by relevance and severity
+- **Automatic location detection**: Browser geolocation supplies coordinates to the API for regional feed queries
+- **Local news monitoring**: Backend fetches RSS and related sources for your area
+- **Severity ranking**:
+  - Keyword scoring with word boundaries, light negation handling, and stronger weight for headline matches than body-only matches
+  - Trust score adjustments from trust-related terms
+  - Ranked list with more severe items first
+- **Dashboard**:
+  - Severity shown with **icons and text** (not color alone)
+  - Source name and article link on each card when a URL is available
+- **Development workflow**: Single `npm run dev` starts Flask and Vite together, with the frontend calling `/api/...` through a Vite proxy
 
 ---
 
 ## **Technologies Used**
 
 ### Backend
-- **Python**:
-  - `Flask`: For API development and CORS handling
-  - `BeautifulSoup`: For web scraping and content extraction
-  - `spaCy`: For natural language processing and entity recognition
-  - `feedparser`: For RSS feed parsing and news aggregation
-  - `geopy`: For geocoding and location services
-  - `requests`: For HTTP requests and web scraping
-- **Location Services**: Automatic geocoding and reverse geocoding
-- **News Aggregation**: RSS feed parsing from multiple sources
+
+- **Python**: Flask, Flask-CORS, BeautifulSoup, spaCy, feedparser, geopy, requests
 
 ### Frontend
-- **React**:
-  - **Vite**: For fast development and building
-  - **Tailwind CSS**: For modern styling and responsive design
-  - **Lucide React**: For intuitive icons and UI elements
-  - **Axios**: For API communication and data fetching
-- **Browser APIs**: Geolocation API for automatic location detection
+
+- **React** (Vite), **Tailwind-related tooling** (PostCSS), **Lucide React**, **Axios**
+- **Vite dev proxy**: `/api` → `http://127.0.0.1:5000` (override with `VITE_DEV_API_PROXY_TARGET` if needed)
 
 ---
 
 ## **Setup**
 
 ### Prerequisites
-- **Backend**:
-  - Python 3.9 or above
-  - Internet connection for news scraping
-- **Frontend**:
-  - Node.js (v14 or above)
-  - Modern browser with geolocation support
 
----
+- Python 3.9+
+- Node.js (v18+ recommended)
 
-### **Quick Setup**
+### Quick setup
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/your-username/crisis-compass.git
-   cd crisis-compass
-   ```
+1. **Clone the repository** and enter the project directory.
 
-2. **Install backend dependencies**:
+2. **Backend** (from project root — the script `cd`s into `backend`):
+
    ```bash
    python setup_backend.py
    ```
 
-3. **Install frontend dependencies**:
+3. **Frontend**:
+
    ```bash
    npm install
    ```
 
-4. **Start the application**:
-   ```bash
-   # Terminal 1 - Start backend
-   cd backend
-   python app.py
-   
-   # Terminal 2 - Start frontend
-   npm run dev
-   ```
+4. **Run app (Flask + Vite)**:
 
-5. **Open your browser** and navigate to `http://localhost:5173`
-
-### **Manual Backend Setup**
-If the quick setup doesn't work, follow these steps:
-
-1. **Navigate to backend directory**:
-   ```bash
-   cd crisis-compass/backend
-   ```
-
-2. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Download spaCy English model**:
-   ```bash
-   python -m spacy download en_core_web_sm
-   ```
-
-4. **Start the backend server**:
-   ```bash
-   python app.py
-   ```
-
-### **Frontend Setup**
-1. **Navigate to project root**:
-   ```bash
-   cd crisis-compass
-   ```
-
-2. **Install Node.js dependencies**:
-   ```bash
-   npm install
-   ```
-
-3. **Start the development server**:
    ```bash
    npm run dev
    ```
+
+5. Open **http://localhost:5173** (or the URL Vite prints).
+
+### Optional environment
+
+| Variable | Purpose |
+|----------|---------|
+| `VITE_API_URL` | API base path or origin for the browser (default: `/api` so the dev proxy is used) |
+| `VITE_DEV_API_PROXY_TARGET` | Backend URL for the Vite proxy (default: `http://127.0.0.1:5000`) |
+| `CRISIS_COMPASS_DEV_SAMPLES` | Set to `1` / `true` / `yes` to inject **labeled dev-only sample incidents** when all feeds return nothing |
+
+### Manual backend (optional)
+
+```bash
+cd backend
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+python app.py
+```
 
 ---
 
 ## **How It Works**
 
-1. **Location Detection**: When you open the app, it automatically requests your location permission
-2. **News Scraping**: The backend scrapes local news sources based on your detected location
-3. **Semantic Analysis**: Each news article is analyzed for emergency keywords and severity indicators
-4. **Ranking**: Incidents are automatically ranked by severity with the most critical at the top
-5. **Real-time Updates**: The dashboard refreshes to show the latest local incidents
+1. The browser requests location permission and sends coordinates to `POST /get-local-incidents`.
+2. The **server** reverse-geocodes, selects feeds, fetches and parses articles, and scores text.
+3. Incidents are **deduplicated** by URL (or title+location) before storage so refreshes do not grow `/get-incidents` with duplicates.
+4. The React app loads data via **`/api/...`**, so production can serve API and UI from one host by setting `VITE_API_URL` appropriately.
 
 ---
 
 ## **API Endpoints**
 
-- `GET /get-incidents` - Retrieve all stored incidents
-- `POST /get-local-incidents` - Scrape and analyze local news based on coordinates
-- `POST /scrape` - Manual URL scraping (legacy functionality)
+- `GET /get-incidents` — Stored incidents (deduplicated)
+- `POST /get-local-incidents` — Body: `{ "latitude", "longitude" }` — fetch and merge regional incidents
+- `POST /scrape` — Manual URL scrape (legacy)
 
 ---
 
 ## **Privacy & Security**
 
-- Location data is only used locally and not stored on servers
-- News scraping respects robots.txt and rate limits
-- All analysis is performed locally on your device
+- Coordinates are sent to **your backend** for geocoding and feed selection; they are not persisted by this demo beyond in-memory processing logs you may configure.
+- News fetching follows normal HTTP and feed semantics; respect site terms and rate limits in production.
+- **Analysis and scraping run on the server**, not inside the user’s browser.

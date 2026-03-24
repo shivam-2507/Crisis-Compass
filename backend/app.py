@@ -8,6 +8,7 @@ import urllib.robotparser
 import urllib.error
 from urllib.parse import quote_plus
 import logging
+import os
 import spacy
 from datetime import datetime
 import feedparser
@@ -17,8 +18,26 @@ from geopy.geocoders import Nominatim
 app = Flask(__name__)
 
 
-# Allow requests from http://localhost:5173
-CORS(app, origins=["http://localhost:5173"])
+def _cors_origins():
+    """Default dev origins plus CRISIS_COMPASS_CORS_ORIGINS (comma-separated) for production."""
+    base = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    extra = os.environ.get("CRISIS_COMPASS_CORS_ORIGINS", "").strip()
+    if not extra:
+        return base
+    seen = set()
+    out = []
+    for o in base + [s.strip() for s in extra.split(",") if s.strip()]:
+        if o not in seen:
+            seen.add(o)
+            out.append(o)
+    return out
+
+
+# Dev: Vite on localhost; production: set CRISIS_COMPASS_CORS_ORIGINS to your site origin(s)
+CORS(app, origins=_cors_origins())
 
 
 # Set up logging
@@ -67,6 +86,51 @@ TRUST_KEYWORDS = {
     "testified": 4,
     "accounted": 2,
 }
+
+# Set CRISIS_COMPASS_DEV_SAMPLES=1 to inject placeholder incidents when RSS returns nothing
+_DEV_SAMPLE_INCIDENTS = os.environ.get(
+    "CRISIS_COMPASS_DEV_SAMPLES", ""
+).lower() in ("1", "true", "yes")
+
+
+def _match_entails_negation(text_lower, match_start):
+    window = text_lower[max(0, match_start - 50) : match_start]
+    return bool(
+        re.search(
+            r"\b(?:no|not|without|never|isn't|aren't|wasn't|weren't)\b(?:\s+\w+){0,6}\s*$",
+            window,
+        )
+    )
+
+
+def _keyword_has_valid_match(text_lower, keyword):
+    if not text_lower or not keyword:
+        return False
+    kw = keyword.strip()
+    if " " in kw:
+        pos = text_lower.find(kw.lower())
+        if pos == -1:
+            return False
+        return not _match_entails_negation(text_lower, pos)
+    for m in re.finditer(r"\b" + re.escape(kw) + r"\b", text_lower):
+        if not _match_entails_negation(text_lower, m.start()):
+            return True
+    return False
+
+
+def _collect_keyword_points(headline_lower, body_lower, keyword_dict, body_weight=0.55):
+    points = 0
+    found = []
+    for kw, pts in keyword_dict.items():
+        in_head = bool(headline_lower and _keyword_has_valid_match(headline_lower, kw))
+        in_body = _keyword_has_valid_match(body_lower, kw)
+        if in_head:
+            points += pts
+            found.append(kw)
+        elif in_body:
+            points += max(1, int(pts * body_weight))
+            found.append(kw)
+    return points, found
 
 
 def get_severity_level(points):
@@ -118,58 +182,75 @@ def can_fetch(url, user_agent='*'):
         return False
 
 
-def extract_emergency_info(text):
+def extract_emergency_info(text, headline=None):
     """
     Extracts emergency-related keywords and calculates severity and trust scores.
-
-    Parameters:
-        text (str): The text to analyze.
-
-    Returns:
-        dict: Contains keywords, points, severity, location, and trustScore.
+    Uses word-boundary matching for single-token keywords, light negation handling,
+    and stronger weight for headline matches than body-only matches.
     """
-    doc = nlp(text.lower())
+    text = text or ""
+    headline = headline or ""
+    body_lower = text.lower()
+    headline_lower = headline.lower()
+    combined_for_nlp = f"{headline} {text}".strip() or text
+    doc = nlp(combined_for_nlp.lower())
 
-    # Extract emergency-related keywords and calculate severity points
-    severity_points = 0
-    emergency_keywords_found = []
-
-    for keyword, points in EMERGENCY_KEYWORDS.items():
-        if keyword in text.lower():
-            severity_points += points
-            emergency_keywords_found.append(keyword)
-
+    severity_points, emergency_keywords_found = _collect_keyword_points(
+        headline_lower, body_lower, EMERGENCY_KEYWORDS, body_weight=0.55
+    )
     severity = get_severity_level(severity_points)
 
-    # Extract trust-related keywords and calculate trust points
-    trust_points = 0
-    trust_keywords_found = []
+    trust_raw, trust_keywords_found = _collect_keyword_points(
+        headline_lower, body_lower, TRUST_KEYWORDS, body_weight=0.65
+    )
+    trust_score = get_trust_score(trust_raw)
 
-    for keyword, points in TRUST_KEYWORDS.items():
-        if keyword in text.lower():
-            trust_points += points
-            trust_keywords_found.append(keyword)
-
-    trust_score = get_trust_score(trust_points)
-
-    # Extract location entities using spaCy
-    locations = [ent.text for ent in doc.ents if ent.label_ in ['GPE', 'LOC']]
+    locations = [ent.text for ent in doc.ents if ent.label_ in ["GPE", "LOC"]]
     location = locations[0] if locations else "Unknown Location"
 
-    # Combine all keywords
     all_keywords = emergency_keywords_found + trust_keywords_found
 
     return {
-        'keywords': all_keywords,
-        'points': severity_points,
-        'severity': severity,
-        'location': location,
-        'trustScore': trust_score
+        "keywords": all_keywords,
+        "points": severity_points,
+        "severity": severity,
+        "location": location,
+        "trustScore": trust_score,
     }
 
 
 # In-memory storage for incidents (For demonstration purposes)
 incidents_db = []
+_incident_key_to_row = {}
+
+# Filled by scrape_local_news for /debug/logs and empty-state hints in the UI
+LAST_LOCAL_SCRAPE_REPORT = {}
+
+
+def _stable_incident_key(inc):
+    url = (inc.get("url") or "").strip()
+    if url:
+        return ("url", url.split("?")[0].strip().lower())
+    title = (inc.get("title") or "").strip().lower()[:120]
+    loc = (inc.get("location") or "").strip().lower()[:80]
+    return ("hash", f"{title}|{loc}")
+
+
+def _next_incident_id():
+    return max((i.get("id", 0) for i in incidents_db), default=0) + 1
+
+
+def merge_incident_into_store(inc):
+    """Dedupe by URL or title+location; reuse existing row and id when seen."""
+    k = _stable_incident_key(inc)
+    if k in _incident_key_to_row:
+        return _incident_key_to_row[k]
+    row = dict(inc)
+    row["id"] = _next_incident_id()
+    row.setdefault("url", "")
+    _incident_key_to_row[k] = row
+    incidents_db.append(row)
+    return row
 
 
 @app.route('/scrape', methods=['POST'])
@@ -194,33 +275,43 @@ def scrape_url():
 
         # Extract main content
         content = ' '.join([p.get_text() for p in soup.find_all('p')])
-        title = soup.title.string if soup.title else "Unknown Title"
+        title = (
+            soup.title.get_text(strip=True)
+            if soup.title
+            else "Unknown Title"
+        )
 
         # Process the content
-        emergency_info = extract_emergency_info(content)
+        emergency_info = extract_emergency_info(content, headline=title)
 
-        # Create incident data
         incident = {
-            'id': len(incidents_db) + 1,  # Incremental ID
-            'type': emergency_info['keywords'][0] if emergency_info['keywords'] else 'general',
-            'title': title[:100],
-            'location': emergency_info['location'],
-            'severity': emergency_info['severity'],
-            'points': emergency_info['points'],
-            'timestamp': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
-            'description': content[:200] + "...",
-            'trustScore': emergency_info['trustScore'],
-            'keywords': emergency_info['keywords']
+            "type": emergency_info["keywords"][0]
+            if emergency_info["keywords"]
+            else "general",
+            "title": title[:100],
+            "location": emergency_info["location"],
+            "severity": emergency_info["severity"],
+            "points": emergency_info["points"],
+            "timestamp": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+            "description": content[:200] + "...",
+            "trustScore": emergency_info["trustScore"],
+            "keywords": emergency_info["keywords"],
+            "source": "Manual scrape",
+            "url": url,
         }
 
-        # Add to the in-memory database
-        incidents_db.append(incident)
-
-        return jsonify(incident)
+        stored = merge_incident_into_store(incident)
+        return jsonify(stored)
 
     except requests.exceptions.RequestException as e:
         logger.error("Error scraping URL: %s", str(e))
         return jsonify({'error': str(e)}), 500
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Liveness probe for load balancers and deploy scripts."""
+    return jsonify({"status": "ok", "service": "crisis-compass-api"}), 200
 
 
 @app.route('/get-incidents', methods=['GET'])
@@ -239,7 +330,8 @@ def get_debug_logs():
     return jsonify({
         'total_incidents': len(incidents_db),
         'recent_incidents': incidents_db[-5:] if incidents_db else [],
-        'server_status': 'running'
+        'server_status': 'running',
+        'last_scrape': LAST_LOCAL_SCRAPE_REPORT,
     })
 
 
@@ -285,13 +377,11 @@ def get_local_incidents():
             city_name, latitude, longitude, region=region, country_code=country_code
         )
         logger.info(f"Found {len(local_incidents)} incidents")
-        
-        # Add to incidents database
-        for incident in local_incidents:
-            incidents_db.append(incident)
-        
-        logger.info(f"=== REQUEST COMPLETE ===")
-        return jsonify(local_incidents)
+
+        merged = [merge_incident_into_store(dict(i)) for i in local_incidents]
+
+        logger.info("=== REQUEST COMPLETE ===")
+        return jsonify(merged)
         
     except Exception as e:
         logger.error("Error getting local incidents: %s", str(e))
@@ -330,40 +420,38 @@ def is_recent_article(entry):
         return True
 
 
+def _parse_iso_date_prefix(raw):
+    if not raw:
+        return None
+    s = raw.strip()
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+    return None
+
+
 def is_recent_web_article(article, title):
     """
-    Basic check for recent web articles (less reliable than RSS dates).
+    Prefer structured dates from the article DOM; no hard-coded year allow/block lists.
+    If no date is found, include the article (same tradeoff as unknown RSS dates).
     """
     try:
-        # Look for date indicators in the title or content
-        title_lower = title.lower()
-        
-        # Skip articles with obvious old date indicators
-        old_indicators = [
-            '2022', '2021', '2020', '2019', '2018', '2017', '2016',
-            'two years ago', 'last year', 'months ago', 'weeks ago',
-            'may 2023', 'april 2023', 'march 2023', 'february 2023', 'january 2023'
-        ]
-        
-        for indicator in old_indicators:
-            if indicator in title_lower:
-                return False
-        
-        # Look for recent indicators
-        recent_indicators = [
-            'today', 'yesterday', 'this week', 'this month',
-            '2024', '2025', 'recent', 'latest', 'breaking'
-        ]
-        
-        for indicator in recent_indicators:
-            if indicator in title_lower:
-                return True
-        
-        # If no clear indicators, assume it's recent (better to include than exclude)
+        if article is not None:
+            t_el = article.select_one("time[datetime]")
+            if t_el and t_el.get("datetime"):
+                article_date = _parse_iso_date_prefix(t_el["datetime"])
+                if article_date:
+                    return (datetime.now() - article_date).days <= 30
+            meta = article.select_one('meta[property="article:published_time"]')
+            if meta and meta.get("content"):
+                article_date = _parse_iso_date_prefix(meta["content"])
+                if article_date:
+                    return (datetime.now() - article_date).days <= 30
         return True
-        
     except Exception as e:
-        logger.warning(f"Error checking web article recency: {str(e)}")
+        logger.warning("Error checking web article recency: %s", e)
         return True
 
 
@@ -601,13 +689,12 @@ def scrape_news_website(source, city_name):
                 full_content = f"{title} {content}"
                 
                 # Analyze for emergency keywords
-                emergency_info = extract_emergency_info(full_content)
+                emergency_info = extract_emergency_info(full_content, headline=title)
                 logger.info(f"Article analysis: '{title[:50]}...' -> points={emergency_info['points']}, keywords={emergency_info['keywords']}")
                 
                 # Only include if it has emergency keywords
                 if emergency_info['points'] > 0:
                     incident = {
-                        'id': len(incidents_db) + len(incidents) + 1,
                         'type': emergency_info['keywords'][0] if emergency_info['keywords'] else 'general',
                         'title': title[:100],
                         'location': emergency_info['location'] if emergency_info['location'] != 'Unknown Location' else city_name,
@@ -701,15 +788,26 @@ def scrape_local_news(city_name, latitude, longitude, region=None, country_code=
     Scrape local news sources for incidents in the specified area.
     Ranks items by emergency NLP score plus local relevance (city/region in text).
     """
+    global LAST_LOCAL_SCRAPE_REPORT
+
     incidents = []
     seen = set()
     region = region or ""
     cc = (country_code or "CA").upper()
     logger.info(f"Scraping local news for city: {city_name} (region={region}, cc={cc})")
 
+    diag = {
+        "city": city_name,
+        "feeds_attempted": 0,
+        "feeds_failed": 0,
+        "feeds_with_entries": 0,
+        "entries_considered": 0,
+    }
+
     news_sources = get_news_sources(city_name, region_hint=region, country_code=cc)
 
     for source in news_sources:
+        diag["feeds_attempted"] += 1
         try:
             logger.info("Checking news source: %s - %s", source["name"], source["url"])
 
@@ -722,7 +820,11 @@ def scrape_local_news(city_name, latitude, longitude, region=None, country_code=
                     getattr(feed, "bozo", False),
                 )
 
+                if len(feed.entries) > 0:
+                    diag["feeds_with_entries"] += 1
+
                 for entry in feed.entries[:12]:
+                    diag["entries_considered"] += 1
                     if not is_recent_article(entry):
                         continue
 
@@ -742,7 +844,7 @@ def scrape_local_news(city_name, latitude, longitude, region=None, country_code=
                         continue
                     seen.add(dk)
 
-                    emergency_info = extract_emergency_info(content)
+                    emergency_info = extract_emergency_info(content, headline=title)
                     local_boost = _local_relevance_boost(content, city_name, region)
                     category = source.get("category", "local")
                     points = emergency_info["points"] + local_boost
@@ -777,7 +879,6 @@ def scrape_local_news(city_name, latitude, longitude, region=None, country_code=
                         loc = emergency_info["location"]
 
                     incident = {
-                        "id": len(incidents_db) + len(incidents) + 1,
                         "type": inc_type,
                         "title": title[:100],
                         "location": loc,
@@ -806,43 +907,80 @@ def scrape_local_news(city_name, latitude, longitude, region=None, country_code=
                 incidents.extend(incidents_from_scraping)
 
         except Exception as e:
+            diag["feeds_failed"] += 1
             logger.warning("Error scraping news source %s: %s", source["name"], str(e))
             continue
 
-    # Add sample incidents only if still no real incidents found
-    if len(incidents) == 0:
-        logger.info("No incidents found from any sources, adding sample incidents for testing")
+    real_count = len(incidents)
+    hint = ""
+    if real_count == 0:
+        if diag["feeds_attempted"] > 0 and diag["feeds_failed"] >= diag["feeds_attempted"]:
+            hint = (
+                "Every RSS feed request failed (timeout, HTTP error, or block). "
+                "Google News often rejects scripted requests—check the API terminal for warnings."
+            )
+        elif diag["feeds_with_entries"] == 0:
+            hint = (
+                "No RSS entries were returned (empty feeds, blocked responses, or parse errors). "
+                "Try again later or inspect API logs."
+            )
+        elif diag["entries_considered"] > 0:
+            hint = (
+                "Feeds returned headlines, but nothing was kept: items may be too old, "
+                "duplicates, or filtered (national stories need emergency keywords or your city in the text)."
+            )
+        else:
+            hint = "No feed entries were scanned."
+
+    LAST_LOCAL_SCRAPE_REPORT = {
+        **diag,
+        "incidents_before_samples": real_count,
+        "hint": hint,
+        "dev_samples_available": _DEV_SAMPLE_INCIDENTS,
+    }
+
+    if len(incidents) == 0 and _DEV_SAMPLE_INCIDENTS:
+        logger.info(
+            "No RSS incidents; adding dev sample rows (CRISIS_COMPASS_DEV_SAMPLES=1)"
+        )
         sample_incidents = [
             {
-                'id': len(incidents_db) + len(incidents) + 1,
-                'type': 'fire',
-                'title': f'Sample Fire Incident in {city_name}',
-                'location': city_name,
-                'severity': 'medium',
-                'points': 25,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
-                'description': f'Sample fire incident reported in {city_name} area. Emergency services responding.',
-                'trustScore': 75,
-                'keywords': ['fire', 'emergency'],
-                'source': 'Sample Data',
-                'url': ''
+                "type": "fire",
+                "title": f"[DEV SAMPLE] Fire drill scenario in {city_name}",
+                "location": city_name,
+                "severity": "medium",
+                "points": 25,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+                "description": (
+                    f"Placeholder incident for UI testing only — not from live news "
+                    f"({city_name})."
+                ),
+                "trustScore": 75,
+                "keywords": ["fire", "emergency"],
+                "source": "Dev sample (not real news)",
+                "url": "",
+                "is_sample": True,
             },
             {
-                'id': len(incidents_db) + len(incidents) + 2,
-                'type': 'medical',
-                'title': f'Sample Medical Emergency in {city_name}',
-                'location': city_name,
-                'severity': 'high',
-                'points': 35,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
-                'description': f'Sample medical emergency in {city_name}. Multiple casualties reported.',
-                'trustScore': 80,
-                'keywords': ['medical', 'emergency', 'casualty'],
-                'source': 'Sample Data',
-                'url': ''
-            }
+                "type": "medical",
+                "title": f"[DEV SAMPLE] Medical scenario in {city_name}",
+                "location": city_name,
+                "severity": "high",
+                "points": 35,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+                "description": (
+                    "Placeholder medical scenario for UI testing only — not from live news."
+                ),
+                "trustScore": 80,
+                "keywords": ["medical", "emergency", "casualty"],
+                "source": "Dev sample (not real news)",
+                "url": "",
+                "is_sample": True,
+            },
         ]
         incidents.extend(sample_incidents)
+    elif len(incidents) == 0:
+        logger.info("No incidents from feeds (samples disabled; set CRISIS_COMPASS_DEV_SAMPLES=1 for placeholders)")
     
     # Sort incidents by severity points (highest first)
     incidents.sort(key=lambda x: x['points'], reverse=True)

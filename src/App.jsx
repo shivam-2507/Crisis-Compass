@@ -1,19 +1,103 @@
-"use client"
-
-import { useState, useEffect } from "react"
-import axios from "axios"
+import { useState, useEffect, useCallback, useMemo } from "react"
+import { api } from "./api"
 import "./App.css"
-import { Home, AlertTriangle, FileText, Settings, MapPin, RefreshCw } from "lucide-react"
+import {
+  Home,
+  AlertTriangle,
+  FileText,
+  Settings,
+  MapPin,
+  RefreshCw,
+  Shield,
+  AlertCircle,
+  ExternalLink,
+  Menu,
+  X,
+  Compass,
+  Info,
+  Lock,
+} from "lucide-react"
+
+const SORT_OPTIONS = [
+  { id: "points", label: "Points" },
+  { id: "severity", label: "Severity" },
+  { id: "trust", label: "Trust" },
+  { id: "time", label: "Newest" },
+]
+
+const SEVERITY_OPTIONS = [
+  { id: "high", label: "High" },
+  { id: "medium", label: "Medium" },
+  { id: "low", label: "Low" },
+]
+
+function parseIncidentTime(ts) {
+  if (ts == null || ts === "") return 0
+  const s = String(ts).trim()
+  const parsed = Date.parse(s)
+  if (!Number.isNaN(parsed)) return parsed
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) {
+    const t = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])).getTime()
+    return Number.isNaN(t) ? 0 : t
+  }
+  return 0
+}
+
+function severityA11yLabel(severity) {
+  const s = (severity || "low").toLowerCase()
+  if (s === "high") return "High severity"
+  if (s === "medium") return "Medium severity"
+  return "Low severity"
+}
+
+// eslint-disable-next-line react/prop-types
+function SeverityIcon({ severity }) {
+  const s = (severity || "low").toLowerCase()
+  const label = severityA11yLabel(severity)
+  if (s === "high") {
+    return <AlertTriangle className="severity-icon" aria-hidden="true" title={label} />
+  }
+  if (s === "medium") {
+    return <AlertCircle className="severity-icon" aria-hidden="true" title={label} />
+  }
+  return <Shield className="severity-icon" aria-hidden="true" title={label} />
+}
 
 function App() {
+  const [navView, setNavView] = useState("incidents")
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [location, setLocation] = useState(null)
   const [locationError, setLocationError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [incidents, setIncidents] = useState([])
   const [isLocationDetecting, setIsLocationDetecting] = useState(true)
+  const [scrapeHint, setScrapeHint] = useState("")
+  const [sortBy, setSortBy] = useState("points")
+  const [severityFilters, setSeverityFilters] = useState([])
+  const [typeFilters, setTypeFilters] = useState([])
+  const [lastUpdated, setLastUpdated] = useState(null)
 
-  // Define emojis for incident types
+  const goTo = useCallback((view) => {
+    setNavView(view)
+    setMobileNavOpen(false)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    const onKey = (e) => {
+      if (e.key === "Escape") setMobileNavOpen(false)
+    }
+    window.addEventListener("keydown", onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      document.body.style.overflow = prev
+    }
+  }, [mobileNavOpen])
+
   const incidentIcons = {
     fire: "🔥",
     medical: "🚑",
@@ -24,61 +108,77 @@ function App() {
     default: "⚠️",
   }
 
-  // Auto-detect location and fetch local incidents on component mount
+  const fetchIncidents = useCallback(async () => {
+    try {
+      const response = await api.get("/get-incidents")
+      setIncidents(response.data)
+      setError(null)
+      setLastUpdated(new Date())
+    } catch (err) {
+      console.error("Error fetching incidents:", err)
+      setError("Failed to load incidents")
+    }
+  }, [])
+
   useEffect(() => {
     const detectLocationAndFetchIncidents = async () => {
       try {
-        // Get user's location
         const position = await new Promise((resolve, reject) => {
           if (!navigator.geolocation) {
-            reject(new Error('Geolocation is not supported by this browser'))
+            reject(new Error("Geolocation is not supported by this browser"))
             return
           }
-          
-          navigator.geolocation.getCurrentPosition(
-            resolve,
-            reject,
-            {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 300000 // 5 minutes
-            }
-          )
+
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 300000,
+          })
         })
 
         const { latitude, longitude } = position.coords
         setLocation({ latitude, longitude })
         setIsLocationDetecting(false)
 
-        // Fetch local incidents based on location
         await fetchLocalIncidents(latitude, longitude)
       } catch (err) {
         console.error("Error detecting location:", err)
         setLocationError("Unable to detect your location. Please enable location services.")
         setIsLocationDetecting(false)
-        
-        // Fallback: fetch general incidents
+
         await fetchIncidents()
       }
     }
 
     detectLocationAndFetchIncidents()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Fetch local incidents based on coordinates
   const fetchLocalIncidents = async (lat, lng) => {
     setLoading(true)
+    setScrapeHint("")
     try {
-      const response = await axios.post("http://localhost:5000/get-local-incidents", {
+      const response = await api.post("/get-local-incidents", {
         latitude: lat,
-        longitude: lng
+        longitude: lng,
       })
-      setIncidents(response.data)
+      const rows = response.data
+      setIncidents(Array.isArray(rows) ? rows : [])
       setError(null)
+      setLastUpdated(new Date())
+
+      if (Array.isArray(rows) && rows.length === 0) {
+        try {
+          const dbg = await api.get("/debug/logs")
+          setScrapeHint(dbg.data?.last_scrape?.hint || "")
+        } catch {
+          setScrapeHint("")
+        }
+      }
     } catch (err) {
       console.error("Error fetching local incidents:", err)
       setError("Failed to load local incidents")
-      // Fallback to general incidents
+      setScrapeHint("")
       try {
         await fetchIncidents()
         setError(null)
@@ -90,136 +190,570 @@ function App() {
     }
   }
 
-  // Fetch general incidents (fallback)
-  const fetchIncidents = async () => {
-    try {
-      const response = await axios.get("http://localhost:5000/get-incidents")
-      setIncidents(response.data)
-    } catch (err) {
-      console.error("Error fetching incidents:", err)
-      setError("Failed to load incidents")
-    }
-  }
-
-  // Refresh local incidents
   const refreshIncidents = async () => {
     if (location) {
       await fetchLocalIncidents(location.latitude, location.longitude)
     } else {
-      await fetchIncidents()
+      setLoading(true)
+      try {
+        await fetchIncidents()
+      } finally {
+        setLoading(false)
+      }
     }
   }
 
-  // Sort incidents by points (highest first)
-  const sortedIncidents = [...incidents].sort((a, b) => b.points - a.points)
+  const switchToGeneralFeed = async () => {
+    setLocation(null)
+    setLocationError(null)
+    setLoading(true)
+    try {
+      await fetchIncidents()
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  return (
-      <div className="app">
-        {/* Header */}
-        <header className="header">
-          <div className="container header-container">
-            <h1 className="logo">CrisisCompass</h1>
+  const typesInData = useMemo(() => {
+    const s = new Set()
+    incidents.forEach((i) => s.add((i.type || "general").toLowerCase()))
+    return [...s].sort()
+  }, [incidents])
 
-            <nav className="nav">
-              <button className="nav-button">
-                <Home className="icon" />
-                Home
-              </button>
-              <button className="nav-button">
-                <AlertTriangle className="icon" />
-                Incidents
-              </button>
-              <button className="nav-button">
-                <FileText className="icon" />
-                Reports
-              </button>
-              <button className="nav-button">
-                <Settings className="icon" />
-                Settings
-              </button>
-            </nav>
-          </div>
-        </header>
+  const filteredSorted = useMemo(() => {
+    let rows = [...incidents]
+    rows = rows.filter((i) => {
+      const sev = (i.severity || "low").toLowerCase()
+      if (severityFilters.length && !severityFilters.includes(sev)) return false
+      const ty = (i.type || "general").toLowerCase()
+      if (typeFilters.length && !typeFilters.includes(ty)) return false
+      return true
+    })
+    const sevOrder = { high: 3, medium: 2, low: 1 }
+    rows.sort((a, b) => {
+      if (sortBy === "points") return (b.points || 0) - (a.points || 0)
+      if (sortBy === "trust") return (b.trustScore || 0) - (a.trustScore || 0)
+      const sb = sevOrder[(b.severity || "low").toLowerCase()] || 0
+      const sa = sevOrder[(a.severity || "low").toLowerCase()] || 0
+      if (sortBy === "severity") {
+        if (sb !== sa) return sb - sa
+        return (b.points || 0) - (a.points || 0)
+      }
+      if (sortBy === "time") {
+        const tb = parseIncidentTime(b.timestamp)
+        const ta = parseIncidentTime(a.timestamp)
+        if (tb !== ta) return tb - ta
+        return (b.points || 0) - (a.points || 0)
+      }
+      return 0
+    })
+    return rows
+  }, [incidents, severityFilters, typeFilters, sortBy])
 
-        {/* Main content */}
-        <main className="main container">
-          {/* Location and Dashboard Header */}
-          <div className="dashboard-header">
-            <div className="location-info">
-              {isLocationDetecting ? (
-                <div className="location-detecting">
-                  <RefreshCw className="icon spinning" />
-                  <span>Detecting your location...</span>
-                </div>
-              ) : location ? (
-                <div className="location-detected">
-                  <MapPin className="icon" />
-                  <span>Monitoring incidents near you</span>
-                  <button onClick={refreshIncidents} className="refresh-button" disabled={loading}>
-                    <RefreshCw className={`icon ${loading ? 'spinning' : ''}`} />
-                    Refresh
-                  </button>
-                </div>
-              ) : (
-                <div className="location-error">
-                  <MapPin className="icon" />
-                  <span>{locationError || "Location not available"}</span>
-                  <button onClick={refreshIncidents} className="refresh-button" disabled={loading}>
-                    <RefreshCw className={`icon ${loading ? 'spinning' : ''}`} />
-                    Load General Incidents
-                  </button>
-                </div>
+  const clearFilters = () => {
+    setSeverityFilters([])
+    setTypeFilters([])
+  }
+
+  const toggleSeverity = (id) => {
+    setSeverityFilters((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const toggleType = (id) => {
+    setTypeFilters((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const incidentsPanel = (
+    <>
+      <div className="dashboard-header">
+        <div className="location-info">
+          {isLocationDetecting ? (
+            <div className="location-detecting">
+              <RefreshCw className="icon spinning" aria-hidden="true" />
+              <span>Detecting your location...</span>
+            </div>
+          ) : location ? (
+            <div className="location-detected">
+              <MapPin className="icon" aria-hidden="true" />
+              <span>Monitoring incidents near you</span>
+              <button
+                type="button"
+                onClick={refreshIncidents}
+                className="refresh-button"
+                disabled={loading}
+              >
+                <RefreshCw className={`icon ${loading ? "spinning" : ""}`} aria-hidden="true" />
+                Refresh
+              </button>
+            </div>
+          ) : (
+            <div className="location-error">
+              <MapPin className="icon" aria-hidden="true" />
+              <span>{locationError || "Location not available"}</span>
+              <button
+                type="button"
+                onClick={refreshIncidents}
+                className="refresh-button"
+                disabled={loading}
+              >
+                <RefreshCw className={`icon ${loading ? "spinning" : ""}`} aria-hidden="true" />
+                Load general incidents
+              </button>
+            </div>
+          )}
+        </div>
+        {lastUpdated && (
+          <p className="last-updated" role="status">
+            Last updated{" "}
+            <time dateTime={lastUpdated.toISOString()}>{lastUpdated.toLocaleString()}</time>
+          </p>
+        )}
+        {error && (
+          <div className="error-banner" role="alert">
+            <p className="error-banner-text">{error}</p>
+            <div className="error-banner-actions">
+              <button type="button" className="refresh-button" onClick={() => refreshIncidents()} disabled={loading}>
+                <RefreshCw className={`icon ${loading ? "spinning" : ""}`} aria-hidden="true" />
+                Retry
+              </button>
+              {location != null && (
+                <button
+                  type="button"
+                  className="refresh-button refresh-button-secondary"
+                  onClick={() => switchToGeneralFeed()}
+                  disabled={loading}
+                >
+                  Use general feed
+                </button>
               )}
             </div>
-            {error && <p className="error-message">{error}</p>}
           </div>
+        )}
+      </div>
 
-          {/* Incident listings */}
-          <div className="incidents-container">
-            <h2 className="incidents-title">
-              {location ? "Local Incidents" : "Recent Incidents"} {loading && <span className="loading-indicator">Loading...</span>}
-            </h2>
+      <div className="incidents-container">
+        <div className="incidents-head">
+          <h2 className="incidents-title">
+            {location ? "Local incidents" : "Recent incidents"}
+            {loading && <span className="loading-indicator">Loading…</span>}
+          </h2>
+          {incidents.length > 0 && !loading && (
+            <p className="incidents-count" role="status">
+              Showing {filteredSorted.length} of {incidents.length}
+            </p>
+          )}
+        </div>
 
-            {incidents.length === 0 && !loading ? (
-                <div className="no-incidents">
-                  <p>{location ? "No local incidents found. The area appears to be safe." : "No incidents found. Monitoring for new reports..."}</p>
+        {incidents.length > 0 && (
+          <div className="incidents-toolbar" role="region" aria-label="Filter and sort">
+            <div className="toolbar-section">
+              <span className="toolbar-label" id="sort-label">
+                Sort
+              </span>
+              <div className="toolbar-pills" role="group" aria-labelledby="sort-label">
+                {SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`toolbar-pill${sortBy === opt.id ? " toolbar-pill-active" : ""}`}
+                    onClick={() => setSortBy(opt.id)}
+                    aria-pressed={sortBy === opt.id}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="toolbar-section">
+              <span className="toolbar-label" id="severity-filter-label">
+                Severity
+              </span>
+              <div className="toolbar-pills" role="group" aria-labelledby="severity-filter-label">
+                {SEVERITY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`toolbar-pill toolbar-pill-filter${severityFilters.includes(opt.id) ? " toolbar-pill-active" : ""}`}
+                    onClick={() => toggleSeverity(opt.id)}
+                    aria-pressed={severityFilters.includes(opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {typesInData.length > 0 && (
+              <div className="toolbar-section toolbar-section-wrap">
+                <span className="toolbar-label" id="type-filter-label">
+                  Type
+                </span>
+                <div className="toolbar-pills" role="group" aria-labelledby="type-filter-label">
+                  {typesInData.map((tid) => (
+                    <button
+                      key={tid}
+                      type="button"
+                      className={`toolbar-pill toolbar-pill-filter${typeFilters.includes(tid) ? " toolbar-pill-active" : ""}`}
+                      onClick={() => toggleType(tid)}
+                      aria-pressed={typeFilters.includes(tid)}
+                    >
+                      {tid}
+                    </button>
+                  ))}
                 </div>
-            ) : (
-                <div className="incidents-list">
-                  {sortedIncidents.map((incident) => {
-                    const iconType = (incident.type || "general").toLowerCase()
-                    const severityClass = `incident-card severity-${incident.severity}`
-
-                    return (
-                        <div key={incident.id} className={severityClass}>
-                          <div className="incident-content">
-                            <div className="incident-info">
-                              <div className="incident-header">
-                                <span className="incident-icon">{incidentIcons[iconType] || incidentIcons.default}</span>
-                                <h3 className="incident-title">{incident.title}</h3>
-                              </div>
-                              <p className="incident-location">PLACE: {incident.location.toUpperCase()}</p>
-                              <p className="incident-description">{incident.description}</p>
-                              <p className="incident-timestamp">{incident.timestamp}</p>
-                            </div>
-
-                            <div className="incident-metrics">
-                        <span className={`incident-severity severity-badge-${incident.severity}`}>
-                          {incident.severity.toUpperCase()} - {incident.points} pts
-                        </span>
-                              <p className="incident-trust">Trust Score: {incident.trustScore}%</p>
-                            </div>
-                          </div>
-                        </div>
-                    )
-                  })}
-                </div>
+              </div>
+            )}
+            {(severityFilters.length > 0 || typeFilters.length > 0) && (
+              <button type="button" className="ghost-button" onClick={clearFilters}>
+                Clear filters
+              </button>
             )}
           </div>
-        </main>
+        )}
+
+        {incidents.length === 0 && !loading ? (
+          <div className="no-incidents">
+            <p>
+              {location
+                ? "No local incidents found from live feeds. The area may be quiet, or feeds may have failed or filtered everything out."
+                : "No incidents found. Monitoring for new reports..."}
+            </p>
+            {location && scrapeHint && (
+              <p className="no-incidents-hint" role="status">
+                <strong>Why empty:</strong> {scrapeHint}
+              </p>
+            )}
+            {location && (
+              <p className="no-incidents-dev">
+                For <strong>demo placeholder cards</strong> when feeds are empty, set environment variable{" "}
+                <code className="sample-code">CRISIS_COMPASS_DEV_SAMPLES=1</code> on the API process and
+                restart <code className="sample-code">npm run dev</code>.
+              </p>
+            )}
+            {!location && locationError && (
+              <div className="no-incidents-actions">
+                <p className="no-incidents-hint">
+                  Location is optional. You can still follow the general incident list, or allow location for
+                  regional feeds.
+                </p>
+                <button type="button" className="primary-link-button" onClick={() => refreshIncidents()} disabled={loading}>
+                  Refresh list
+                </button>
+              </div>
+            )}
+          </div>
+        ) : filteredSorted.length === 0 && !loading ? (
+          <div className="no-incidents no-incidents-filtered">
+            <p>No incidents match your filters.</p>
+            <button type="button" className="ghost-button ghost-button-prominent" onClick={clearFilters}>
+              Clear filters
+            </button>
+          </div>
+        ) : (
+          <div className="incidents-list">
+            {filteredSorted.map((incident, index) => {
+              const iconType = (incident.type || "general").toLowerCase()
+              const severityClass = `incident-card severity-${incident.severity}`
+              const sevLabel = severityA11yLabel(incident.severity)
+              const rawUrl = (incident.url || "").trim()
+              const safeUrl =
+                rawUrl && (rawUrl.startsWith("http://") || rawUrl.startsWith("https://"))
+                  ? rawUrl
+                  : null
+              const sourceName = incident.source || "Unknown source"
+              const delay = Math.min(index * 0.05, 0.45)
+
+              return (
+                <article
+                  key={`${incident.id}-${incident.title}`}
+                  className={severityClass}
+                  aria-label={`${sevLabel}: ${incident.title}`}
+                  style={{ animationDelay: `${delay}s` }}
+                >
+                  {incident.is_sample && (
+                    <div className="sample-banner" role="status">
+                      Dev / sample row — not from live RSS. Enable server-side samples with{" "}
+                      <code className="sample-code">CRISIS_COMPASS_DEV_SAMPLES=1</code> when feeds are
+                      empty.
+                    </div>
+                  )}
+                  <div className="incident-content">
+                    <div className="incident-info">
+                      <div className="incident-header">
+                        <span className="incident-icon" aria-hidden="true">
+                          {incidentIcons[iconType] || incidentIcons.default}
+                        </span>
+                        <h3 className="incident-title">{incident.title}</h3>
+                      </div>
+                      <p className="incident-source">
+                        <span className="source-label">Source:</span>{" "}
+                        {safeUrl ? (
+                          <a
+                            href={safeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="source-link"
+                          >
+                            {sourceName}
+                            <ExternalLink className="source-link-icon" aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <span>{sourceName}</span>
+                        )}
+                      </p>
+                      <p className="incident-location">Place: {incident.location}</p>
+                      <p className="incident-description">{incident.description}</p>
+                      <p className="incident-timestamp">{incident.timestamp}</p>
+                    </div>
+
+                    <div className="incident-metrics">
+                      <span className={`incident-severity severity-badge-${incident.severity}`}>
+                        <SeverityIcon severity={incident.severity} />
+                        <span className="severity-text">
+                          {(incident.severity || "low").toUpperCase()} — {incident.points} pts
+                        </span>
+                      </span>
+                      <p className="incident-trust">Trust score: {incident.trustScore}%</p>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
       </div>
+    </>
+  )
+
+  const navButtons = () => (
+    <>
+      <button
+        type="button"
+        className={`nav-button${navView === "home" ? " nav-button-active" : ""}`}
+        onClick={() => goTo("home")}
+      >
+        <Home className="icon" aria-hidden="true" />
+        Home
+      </button>
+      <button
+        type="button"
+        className={`nav-button${navView === "incidents" ? " nav-button-active" : ""}`}
+        onClick={() => goTo("incidents")}
+      >
+        <AlertTriangle className="icon" aria-hidden="true" />
+        Incidents
+      </button>
+      <button
+        type="button"
+        className={`nav-button${navView === "reports" ? " nav-button-active" : ""}`}
+        onClick={() => goTo("reports")}
+      >
+        <FileText className="icon" aria-hidden="true" />
+        Reports
+      </button>
+      <button
+        type="button"
+        className={`nav-button${navView === "settings" ? " nav-button-active" : ""}`}
+        onClick={() => goTo("settings")}
+      >
+        <Settings className="icon" aria-hidden="true" />
+        Settings
+      </button>
+    </>
+  )
+
+  return (
+    <div className="app">
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
+
+      <header className="header">
+        <div className="container header-container">
+          <h1 className="logo">
+            <span className="logo-wrap">
+              <span className="logo-mark" aria-hidden="true">
+                <Compass className="logo-mark-icon" />
+              </span>
+              CrisisCompass
+            </span>
+          </h1>
+
+          <nav className="nav" aria-label="Main navigation">
+            {navButtons()}
+          </nav>
+
+          <button
+            type="button"
+            className="nav-toggle"
+            aria-expanded={mobileNavOpen}
+            aria-controls="mobile-nav-drawer"
+            aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+            onClick={() => setMobileNavOpen((o) => !o)}
+          >
+            {mobileNavOpen ? <X className="icon" aria-hidden="true" /> : <Menu className="icon" aria-hidden="true" />}
+          </button>
+        </div>
+      </header>
+
+      <div
+        className={`mobile-nav-backdrop${mobileNavOpen ? " is-open" : ""}`}
+        aria-hidden="true"
+        onClick={() => setMobileNavOpen(false)}
+      />
+
+      <nav
+        id="mobile-nav-drawer"
+        className={`mobile-nav${mobileNavOpen ? " is-open" : ""}`}
+        aria-label="Mobile navigation"
+        aria-hidden={!mobileNavOpen}
+      >
+        {navButtons()}
+      </nav>
+
+      <main id="main-content" className="main container" tabIndex={-1}>
+        {navView === "home" && (
+          <section className="hero" aria-labelledby="home-heading">
+            <p className="hero-eyebrow">Regional awareness</p>
+            <h2 id="home-heading" className="hero-title">
+              See what matters near you—ranked and sourced.
+            </h2>
+            <p className="hero-lead">
+              CrisisCompass pulls nearby news feeds and scores items for severity on the{" "}
+              <strong>server</strong>. Coordinates are used only to pick regional feeds; open{" "}
+              <strong>Incidents</strong> for the live board.
+            </p>
+            <div className="hero-actions">
+              <button type="button" className="primary-link-button" onClick={() => goTo("incidents")}>
+                Open incident board
+              </button>
+            </div>
+            <div className="hero-chips" role="list">
+              <span className="hero-chip" role="listitem">
+                Server-side ranking
+              </span>
+              <span className="hero-chip" role="listitem">
+                Source-linked items
+              </span>
+              <span className="hero-chip" role="listitem">
+                Location-aware feeds
+              </span>
+            </div>
+            <p className="hero-footnote">
+              <button type="button" className="inline-text-button" onClick={() => goTo("privacy")}>
+                Privacy
+              </button>
+              {" · "}
+              <button type="button" className="inline-text-button" onClick={() => goTo("about")}>
+                About
+              </button>
+            </p>
+          </section>
+        )}
+
+        {navView === "incidents" && incidentsPanel}
+
+        {navView === "reports" && (
+          <section className="static-panel" aria-labelledby="reports-heading">
+            <h2 id="reports-heading" className="static-panel-title">
+              Reports
+            </h2>
+            <p className="static-panel-text">
+              Export, PDF summaries, and scheduled digests are not enabled in this build. Use the incidents
+              view for the live dashboard.
+            </p>
+            <div className="muted-card" role="note">
+              Planned: digest scheduling, CSV export, and printable summaries—wired to the same incident
+              pipeline you use today.
+            </div>
+          </section>
+        )}
+
+        {navView === "settings" && (
+          <section className="static-panel" aria-labelledby="settings-heading">
+            <h2 id="settings-heading" className="static-panel-title">
+              Settings
+            </h2>
+            <p className="static-panel-text">
+              Notification preferences, alert thresholds, and account options are not configured in this demo.
+            </p>
+            <div className="muted-card" role="note">
+              When enabled, you&apos;ll tune severity floors, quiet hours, and delivery channels without
+              leaving this screen.
+            </div>
+          </section>
+        )}
+
+        {navView === "about" && (
+          <section className="static-panel static-panel-wide" aria-labelledby="about-heading">
+            <div className="static-panel-icon" aria-hidden="true">
+              <Info className="static-panel-icon-svg" />
+            </div>
+            <h2 id="about-heading" className="static-panel-title">
+              About CrisisCompass
+            </h2>
+            <p className="static-panel-text">
+              CrisisCompass aggregates public news-style signals and ranks them with keyword and NLP heuristics
+              on the server. It is a <strong>decision-support and awareness</strong> tool, not an official
+              emergency channel. Always follow instructions from local authorities, 911, and verified civil
+              alerts.
+            </p>
+            <p className="static-panel-text">
+              Feeds and scrapers can fail, lag, or omit events. Trust scores and severity points are automated
+              estimates—not human verification of every story.
+            </p>
+          </section>
+        )}
+
+        {navView === "privacy" && (
+          <section className="static-panel static-panel-wide" aria-labelledby="privacy-heading">
+            <div className="static-panel-icon" aria-hidden="true">
+              <Lock className="static-panel-icon-svg" />
+            </div>
+            <h2 id="privacy-heading" className="static-panel-title">
+              Privacy
+            </h2>
+            <p className="static-panel-text">
+              When you allow browser location, <strong>latitude and longitude</strong> are sent to the
+              CrisisCompass API to resolve a general area (e.g. city or region) and request relevant RSS and
+              web sources. Coordinates are used for that request flow; we do not use them for advertising in
+              this open-source demo.
+            </p>
+            <p className="static-panel-text">
+              Incident titles, descriptions, and links come from <strong>third-party publishers</strong>.
+              Opening a source link leaves this site and is subject to that publisher&apos;s policies.
+            </p>
+            <p className="static-panel-text">
+              Deploying your own instance: configure HTTPS, restrict CORS with{" "}
+              <code className="sample-code">CRISIS_COMPASS_CORS_ORIGINS</code>, and review logs and retention
+              on your server.
+            </p>
+          </section>
+        )}
+      </main>
+
+      <footer className="site-footer">
+        <div className="container site-footer-inner">
+          <span className="site-footer-brand">CrisisCompass</span>
+          <div className="site-footer-right">
+            <span className="site-footer-links" role="navigation" aria-label="Legal and about">
+              <button type="button" className="footer-link" onClick={() => goTo("about")}>
+                About
+              </button>
+              <span className="footer-dot" aria-hidden="true">
+                ·
+              </span>
+              <button type="button" className="footer-link" onClick={() => goTo("privacy")}>
+                Privacy
+              </button>
+            </span>
+            <span className="site-footer-meta">
+              Local feeds · severity signals · {new Date().getFullYear()}
+            </span>
+          </div>
+        </div>
+      </footer>
+    </div>
   )
 }
 
 export default App
-

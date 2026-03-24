@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+skill-creator/
+frontend-design/
+skill-creator/
+web-artifacts-builder/
+
+DEPLOY.md
