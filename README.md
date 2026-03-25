@@ -70,6 +70,9 @@
 | `VITE_API_URL` | API base path or origin for the browser (default: `/api` so the dev proxy is used) |
 | `VITE_DEV_API_PROXY_TARGET` | Backend URL for the Vite proxy (default: `http://127.0.0.1:5000`) |
 | `CRISIS_COMPASS_DEV_SAMPLES` | Set to `1` / `true` / `yes` to inject **labeled dev-only sample incidents** when all feeds return nothing |
+| `CRISIS_COMPASS_DB_PATH` | Optional absolute path to the SQLite file (default: `backend/data/crisis_compass.db`) |
+| `OPENAI_API_KEY` | Optional; enables **Reports** AI summary and entity graph (LangChain + OpenAI). Easiest: put it in a **`.env`** file in the project root (copy from `.env.example`); the Flask app loads it automatically via `python-dotenv`. |
+| `OPENAI_REPORT_MODEL` | Optional OpenAI model id for reports (default: `gpt-4o-mini`) |
 
 ### Manual backend (optional)
 
@@ -86,8 +89,10 @@ python app.py
 
 1. The browser requests location permission and sends coordinates to `POST /get-local-incidents`.
 2. The **server** reverse-geocodes, selects feeds, fetches and parses articles, and scores text.
-3. Incidents are **deduplicated** by URL (or title+location) before storage so refreshes do not grow `/get-incidents` with duplicates.
+3. Incidents are **deduplicated** by URL (or title+location), merged into an in-memory cache, and **persisted to SQLite** (default path under `backend/data/`, gitignored) for reporting windows and exports.
 4. The React app loads data via **`/api/...`**, so production can serve API and UI from one host by setting `VITE_API_URL` appropriately.
+5. **Reports** uses deterministic aggregates from stored incidents; optional **LangChain** narrative and entity graph run only when `OPENAI_API_KEY` is set on the server.
+6. **Settings** (severity floor, quiet hours, AI toggles, accessibility) are stored in **localStorage** in the browser.
 
 ---
 
@@ -96,11 +101,15 @@ python app.py
 - `GET /get-incidents` — Stored incidents (deduplicated)
 - `POST /get-local-incidents` — Body: `{ "latitude", "longitude" }` — fetch and merge regional incidents
 - `POST /scrape` — Manual URL scrape (legacy)
+- `GET /report/summary?hours=24&compare_hours=` — JSON aggregates (optional `compare_hours` for previous window)
+- `GET /report/export.csv?hours=24` — CSV export for the window
+- `GET /report/print.html?hours=24` — Printable HTML summary (use browser Print to PDF)
+- `POST /report/insights` — Body: `{ "hours", "compare_hours", "include_llm", "tone", "length" }` — summary + optional AI fields
 
 ---
 
 ## **Privacy & Security**
 
-- Coordinates are sent to **your backend** for geocoding and feed selection; they are not persisted by this demo beyond in-memory processing logs you may configure.
+- Coordinates are sent to **your backend** for geocoding and feed selection. Incident text and metadata are stored in **local SQLite** on the server (for the dashboard and reports); review retention and disk on your deployment.
 - News fetching follows normal HTTP and feed semantics; respect site terms and rate limits in production.
 - **Analysis and scraping run on the server**, not inside the user’s browser.

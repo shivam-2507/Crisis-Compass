@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Secrets (copy from .env.example)
+.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -29,3 +32,6 @@ skill-creator/
 web-artifacts-builder/
 
 DEPLOY.md
+
+# Local SQLite data
+backend/data/

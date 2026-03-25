@@ -1,5 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { api } from "./api"
+import { ReportsPanel } from "./components/ReportsPanel"
+import { SettingsPanel } from "./components/SettingsPanel"
+import {
+  loadSettings,
+  saveSettings,
+  inQuietHours,
+  severityMeetsFloor,
+} from "./settingsStorage"
 import "./App.css"
 import {
   Home,
@@ -78,6 +86,20 @@ function App() {
   const [severityFilters, setSeverityFilters] = useState([])
   const [typeFilters, setTypeFilters] = useState([])
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [settings, setSettings] = useState(() => loadSettings())
+
+  useEffect(() => {
+    saveSettings(settings)
+  }, [settings])
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${settings.fontScale}%`
+  }, [settings.fontScale])
+
+  useEffect(() => {
+    if (settings.reducedMotion) document.documentElement.classList.add("reduce-motion")
+    else document.documentElement.classList.remove("reduce-motion")
+  }, [settings.reducedMotion])
 
   const goTo = useCallback((view) => {
     setNavView(view)
@@ -120,75 +142,113 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    const detectLocationAndFetchIncidents = async () => {
+  const fetchLocalIncidents = useCallback(
+    async (lat, lng) => {
+      setLoading(true)
+      setScrapeHint("")
+      try {
+        const response = await api.post("/get-local-incidents", {
+          latitude: lat,
+          longitude: lng,
+        })
+        const rows = response.data
+        setIncidents(Array.isArray(rows) ? rows : [])
+        setError(null)
+        setLastUpdated(new Date())
+
+        if (Array.isArray(rows) && rows.length === 0) {
+          try {
+            const dbg = await api.get("/debug/logs")
+            setScrapeHint(dbg.data?.last_scrape?.hint || "")
+          } catch {
+            setScrapeHint("")
+          }
+        } else {
+          setScrapeHint("")
+        }
+      } catch (err) {
+        console.error("Error fetching local incidents:", err)
+        setError("Failed to load local incidents")
+        setScrapeHint("")
+        try {
+          await fetchIncidents()
+          setError(null)
+        } catch {
+          /* fetchIncidents already set error */
+        }
+      } finally {
+        setLoading(false)
+      }
+    },
+    [fetchIncidents]
+  )
+
+  const runGeolocationFlow = useCallback(
+    async (forceFresh = false) => {
+      if (!navigator.geolocation) {
+        setLocationError("This browser does not support geolocation.")
+        setIsLocationDetecting(false)
+        setLocation(null)
+        await fetchIncidents()
+        return
+      }
+      setIsLocationDetecting(true)
+      setLocationError(null)
       try {
         const position = await new Promise((resolve, reject) => {
-          if (!navigator.geolocation) {
-            reject(new Error("Geolocation is not supported by this browser"))
-            return
-          }
-
           navigator.geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 300000,
+            timeout: forceFresh ? 120000 : 90000,
+            maximumAge: forceFresh ? 0 : 300000,
           })
         })
-
         const { latitude, longitude } = position.coords
         setLocation({ latitude, longitude })
-        setIsLocationDetecting(false)
-
+        setLocationError(null)
         await fetchLocalIncidents(latitude, longitude)
       } catch (err) {
         console.error("Error detecting location:", err)
-        setLocationError("Unable to detect your location. Please enable location services.")
-        setIsLocationDetecting(false)
-
+        setLocation(null)
+        setLocationError(
+          "Location not available yet. Allow location for this site (address bar lock icon), then tap “Try location again”—no full page reload needed—or use the general feed."
+        )
         await fetchIncidents()
+      } finally {
+        setIsLocationDetecting(false)
       }
-    }
+    },
+    [fetchLocalIncidents, fetchIncidents]
+  )
 
-    detectLocationAndFetchIncidents()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const runGeolocationFlowRef = useRef(runGeolocationFlow)
+  useEffect(() => {
+    runGeolocationFlowRef.current = runGeolocationFlow
+  }, [runGeolocationFlow])
 
-  const fetchLocalIncidents = async (lat, lng) => {
-    setLoading(true)
-    setScrapeHint("")
-    try {
-      const response = await api.post("/get-local-incidents", {
-        latitude: lat,
-        longitude: lng,
-      })
-      const rows = response.data
-      setIncidents(Array.isArray(rows) ? rows : [])
-      setError(null)
-      setLastUpdated(new Date())
+  useEffect(() => {
+    runGeolocationFlow(false)
+  }, [runGeolocationFlow])
 
-      if (Array.isArray(rows) && rows.length === 0) {
-        try {
-          const dbg = await api.get("/debug/logs")
-          setScrapeHint(dbg.data?.last_scrape?.hint || "")
-        } catch {
-          setScrapeHint("")
+  useEffect(() => {
+    if (!navigator.permissions?.query) return undefined
+    let perm = null
+    let handler = null
+    const p = navigator.permissions.query({ name: "geolocation" })
+    p.then((permissionStatus) => {
+      perm = permissionStatus
+      handler = () => {
+        if (permissionStatus.state === "granted") {
+          runGeolocationFlowRef.current(true)
         }
       }
-    } catch (err) {
-      console.error("Error fetching local incidents:", err)
-      setError("Failed to load local incidents")
-      setScrapeHint("")
-      try {
-        await fetchIncidents()
-        setError(null)
-      } catch {
-        /* fetchIncidents already set error */
-      }
-    } finally {
-      setLoading(false)
+      permissionStatus.addEventListener("change", handler)
+    }).catch(() => {
+      /* Safari / older browsers */
+    })
+    return () => {
+      if (perm && handler) perm.removeEventListener("change", handler)
     }
-  }
+  }, [])
 
   const refreshIncidents = async () => {
     if (location) {
@@ -227,6 +287,7 @@ function App() {
       if (severityFilters.length && !severityFilters.includes(sev)) return false
       const ty = (i.type || "general").toLowerCase()
       if (typeFilters.length && !typeFilters.includes(ty)) return false
+      if (!severityMeetsFloor(i.severity, settings.severityFloor)) return false
       return true
     })
     const sevOrder = { high: 3, medium: 2, low: 1 }
@@ -248,7 +309,7 @@ function App() {
       return 0
     })
     return rows
-  }, [incidents, severityFilters, typeFilters, sortBy])
+  }, [incidents, severityFilters, typeFilters, sortBy, settings.severityFloor])
 
   const clearFilters = () => {
     setSeverityFilters([])
@@ -290,15 +351,25 @@ function App() {
             <div className="location-error">
               <MapPin className="icon" aria-hidden="true" />
               <span>{locationError || "Location not available"}</span>
-              <button
-                type="button"
-                onClick={refreshIncidents}
-                className="refresh-button"
-                disabled={loading}
-              >
-                <RefreshCw className={`icon ${loading ? "spinning" : ""}`} aria-hidden="true" />
-                Load general incidents
-              </button>
+              <div className="location-error-actions">
+                <button
+                  type="button"
+                  onClick={() => runGeolocationFlow(true)}
+                  className="refresh-button"
+                  disabled={loading || isLocationDetecting}
+                >
+                  <RefreshCw className={`icon ${isLocationDetecting ? "spinning" : ""}`} aria-hidden="true" />
+                  Try location again
+                </button>
+                <button
+                  type="button"
+                  onClick={() => refreshIncidents()}
+                  className="refresh-button refresh-button-secondary"
+                  disabled={loading}
+                >
+                  Load general incidents
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -307,6 +378,15 @@ function App() {
             Last updated{" "}
             <time dateTime={lastUpdated.toISOString()}>{lastUpdated.toLocaleString()}</time>
           </p>
+        )}
+        {settings.channelInApp &&
+          inQuietHours(new Date(), settings.quietStart, settings.quietEnd) && (
+          <div className="quiet-hours-banner" role="status">
+            <p>
+              Quiet hours ({settings.quietStart}–{settings.quietEnd}): in-app notices are muted; check the
+              board for updates.
+            </p>
+          </div>
         )}
         {error && (
           <div className="error-banner" role="alert">
@@ -653,34 +733,15 @@ function App() {
         {navView === "incidents" && incidentsPanel}
 
         {navView === "reports" && (
-          <section className="static-panel" aria-labelledby="reports-heading">
-            <h2 id="reports-heading" className="static-panel-title">
-              Reports
-            </h2>
-            <p className="static-panel-text">
-              Export, PDF summaries, and scheduled digests are not enabled in this build. Use the incidents
-              view for the live dashboard.
-            </p>
-            <div className="muted-card" role="note">
-              Planned: digest scheduling, CSV export, and printable summaries—wired to the same incident
-              pipeline you use today.
-            </div>
-          </section>
+          <ReportsPanel
+            includeLlm={settings.includeLlm}
+            llmTone={settings.llmTone}
+            llmLength={settings.llmLength}
+          />
         )}
 
         {navView === "settings" && (
-          <section className="static-panel" aria-labelledby="settings-heading">
-            <h2 id="settings-heading" className="static-panel-title">
-              Settings
-            </h2>
-            <p className="static-panel-text">
-              Notification preferences, alert thresholds, and account options are not configured in this demo.
-            </p>
-            <div className="muted-card" role="note">
-              When enabled, you&apos;ll tune severity floors, quiet hours, and delivery channels without
-              leaving this screen.
-            </div>
-          </section>
+          <SettingsPanel settings={settings} onChange={setSettings} />
         )}
 
         {navView === "about" && (
@@ -721,6 +782,11 @@ function App() {
             <p className="static-panel-text">
               Incident titles, descriptions, and links come from <strong>third-party publishers</strong>.
               Opening a source link leaves this site and is subject to that publisher&apos;s policies.
+            </p>
+            <p className="static-panel-text">
+              The API stores incident rows in <strong>SQLite</strong> on the server (for the dashboard and
+              reports). Settings you change in this app are saved in <strong>localStorage</strong> in your
+              browser.
             </p>
             <p className="static-panel-text">
               Deploying your own instance: configure HTTPS, restrict CORS with{" "}

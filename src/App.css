@@ -590,6 +590,18 @@
   color: var(--cc-danger);
 }
 
+.location-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+
+.location-error .refresh-button {
+  margin-left: 0;
+}
+
 .refresh-button {
   margin-left: auto;
   display: inline-flex;
@@ -1186,4 +1198,333 @@
   .spinning {
     animation: none;
   }
+}
+
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+html.reduce-motion .spinning {
+  animation: none;
+}
+
+/* —— Quiet hours —— */
+.quiet-hours-banner {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-signal-dim);
+  background: rgba(92, 224, 216, 0.08);
+  color: var(--cc-text-muted);
+  font-size: 0.875rem;
+}
+
+.quiet-hours-banner p {
+  margin: 0;
+}
+
+/* —— Settings —— */
+.settings-panel {
+  text-align: left;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .settings-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.settings-fieldset {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-md);
+  background: var(--cc-surface);
+}
+
+.settings-legend {
+  padding: 0 0.35rem;
+  font-family: var(--cc-font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--cc-text);
+}
+
+.settings-label {
+  display: block;
+  margin: 0.5rem 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--cc-text-muted);
+}
+
+.settings-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--cc-text-dim);
+  line-height: 1.45;
+}
+
+.settings-select,
+.settings-input {
+  width: 100%;
+  max-width: 16rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-border-strong);
+  background: var(--cc-surface-solid);
+  color: var(--cc-text);
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+  color: var(--cc-text-muted);
+  cursor: pointer;
+}
+
+.settings-check input {
+  margin-top: 0.2rem;
+}
+
+.settings-check-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* —— Reports —— */
+.reports-panel {
+  text-align: left;
+  padding-bottom: 2rem;
+}
+
+.reports-header .static-panel-title {
+  margin-bottom: 0.35rem;
+}
+
+.reports-lead {
+  max-width: 52rem;
+}
+
+.reports-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 1.25rem 0 1.5rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-md);
+  background: var(--cc-surface);
+}
+
+.reports-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.reports-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reports-link-button {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.reports-custom-hours {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--cc-text-muted);
+}
+
+.reports-number {
+  width: 5rem;
+  max-width: none;
+}
+
+.reports-compare-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--cc-text-muted);
+}
+
+.reports-compare-select .settings-select {
+  max-width: 10rem;
+}
+
+.reports-loading {
+  color: var(--cc-text-muted);
+}
+
+.reports-meta p {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+  color: var(--cc-text-muted);
+}
+
+.reports-compare-cards {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (min-width: 720px) {
+  .reports-compare-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.compare-card .reports-pre {
+  margin: 0;
+  font-size: 0.75rem;
+  overflow: auto;
+  color: var(--cc-text-muted);
+}
+
+.reports-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.reports-chart-card {
+  padding: 1rem 1.1rem;
+}
+
+.reports-chart-title {
+  margin: 0 0 0.75rem;
+  font-family: var(--cc-font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--cc-text);
+}
+
+.reports-chart-wrap {
+  width: 100%;
+  min-height: 240px;
+}
+
+.reports-empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--cc-text-dim);
+}
+
+.reports-ai-card {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+}
+
+.reports-inline-icon {
+  display: inline;
+  vertical-align: -0.15em;
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 0.35rem;
+}
+
+.reports-summary-text {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--cc-text-muted);
+}
+
+.reports-llm-notice {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--cc-text-dim);
+}
+
+.reports-llm-error {
+  margin: 0.5rem 0 0;
+}
+
+.reports-disclaimer {
+  margin: 1.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--cc-text-dim);
+}
+
+.entity-graph-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--cc-border);
+}
+
+.entity-graph-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--cc-text-muted);
+}
+
+.entity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: var(--cc-accent-dim);
+  border: 1px solid var(--cc-border);
+  font-size: 0.8rem;
+  color: var(--cc-text);
+}
+
+.entity-chip-type {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cc-text-dim);
+}
+
+.entity-edges {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--cc-text-muted);
+  line-height: 1.5;
+}
+
+.entity-edge-rel {
+  margin: 0 0.35rem;
+  color: var(--cc-signal);
+  font-size: 0.8rem;
 }

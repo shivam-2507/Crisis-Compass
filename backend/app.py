@@ -1,6 +1,21 @@
 # main.py
 
-from flask import Flask, request, jsonify
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+_backend_dir = Path(__file__).resolve().parent
+_repo_root = _backend_dir.parent
+# override=True: a blank OPENAI_API_KEY in the OS environment would otherwise block .env (dotenv default).
+for _dotenv_path in (
+    _repo_root / ".env",
+    _backend_dir / ".env",
+    Path.cwd() / ".env",
+):
+    if _dotenv_path.is_file():
+        load_dotenv(_dotenv_path, override=True)
+
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
@@ -9,11 +24,17 @@ import urllib.error
 from urllib.parse import quote_plus
 import logging
 import os
+import time
 import spacy
 from datetime import datetime
 import feedparser
 import re
+import threading
 from geopy.geocoders import Nominatim
+
+import storage
+import reporting
+import llm_report
 
 app = Flask(__name__)
 
@@ -44,6 +65,13 @@ CORS(app, origins=_cors_origins())
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+if (os.environ.get("OPENAI_API_KEY") or "").strip():
+    logger.info("OPENAI_API_KEY is set — Reports AI summary / entity graph can run.")
+else:
+    logger.info(
+        "OPENAI_API_KEY is not set — put it in .env at the repo root (or backend/) and restart the API."
+    )
 
 # Initialize spaCy
 try:
@@ -219,9 +247,12 @@ def extract_emergency_info(text, headline=None):
     }
 
 
-# In-memory storage for incidents (For demonstration purposes)
+# In-memory cache; SQLite is source of truth after startup
 incidents_db = []
 _incident_key_to_row = {}
+_db_lock = threading.Lock()
+_db_conn = storage.connect()
+storage.init_schema(_db_conn)
 
 # Filled by scrape_local_news for /debug/logs and empty-state hints in the UI
 LAST_LOCAL_SCRAPE_REPORT = {}
@@ -236,21 +267,44 @@ def _stable_incident_key(inc):
     return ("hash", f"{title}|{loc}")
 
 
-def _next_incident_id():
-    return max((i.get("id", 0) for i in incidents_db), default=0) + 1
+def _rebuild_incident_key_map():
+    global _incident_key_to_row
+    _incident_key_to_row = {}
+    for row in incidents_db:
+        _incident_key_to_row[_stable_incident_key(row)] = row
+
+
+def _load_incidents_from_db():
+    global incidents_db
+    with _db_lock:
+        incidents_db[:] = storage.load_all_incidents(_db_conn)
+    _rebuild_incident_key_map()
+
+
+_load_incidents_from_db()
 
 
 def merge_incident_into_store(inc):
-    """Dedupe by URL or title+location; reuse existing row and id when seen."""
+    """Dedupe by URL or title+location; persist to SQLite; reuse id when seen."""
     k = _stable_incident_key(inc)
-    if k in _incident_key_to_row:
-        return _incident_key_to_row[k]
-    row = dict(inc)
-    row["id"] = _next_incident_id()
-    row.setdefault("url", "")
-    _incident_key_to_row[k] = row
-    incidents_db.append(row)
-    return row
+    with _db_lock:
+        if k in _incident_key_to_row:
+            prev = _incident_key_to_row[k]
+            merged = {**prev, **dict(inc), "id": prev["id"]}
+            merged.setdefault("url", "")
+            stored = storage.upsert_incident(_db_conn, merged)
+            _incident_key_to_row[k] = stored
+            for i, r in enumerate(incidents_db):
+                if r.get("id") == stored.get("id"):
+                    incidents_db[i] = stored
+                    break
+            return stored
+        row = dict(inc)
+        row.setdefault("url", "")
+        stored = storage.upsert_incident(_db_conn, row)
+        _incident_key_to_row[k] = stored
+        incidents_db.append(stored)
+        return stored
 
 
 @app.route('/scrape', methods=['POST'])
@@ -322,6 +376,105 @@ def get_incidents():
     return jsonify(incidents_db)
 
 
+def _fetch_incidents_for_report_windows(hours, compare_hours):
+    """Load incidents from SQLite covering primary window and optional comparison window."""
+    end = time.time()
+    h = float(hours)
+    total = h + (float(compare_hours) if compare_hours else 0.0)
+    start = end - total * 3600
+    with _db_lock:
+        return storage.list_incidents_since(_db_conn, start, end, limit=20000)
+
+
+@app.route("/report/summary", methods=["GET"])
+def report_summary():
+    try:
+        hours = float(request.args.get("hours", 24))
+    except (TypeError, ValueError):
+        hours = 24.0
+    compare_hours = request.args.get("compare_hours", type=float)
+    rows = _fetch_incidents_for_report_windows(hours, compare_hours)
+    data = reporting.build_summary(rows, hours=hours, compare_hours=compare_hours)
+    return jsonify(data)
+
+
+@app.route("/report/export.csv", methods=["GET"])
+def report_export_csv():
+    try:
+        hours = float(request.args.get("hours", 24))
+    except (TypeError, ValueError):
+        hours = 24.0
+    end = time.time()
+    start = end - hours * 3600
+    with _db_lock:
+        rows = storage.list_incidents_since(_db_conn, start, end, limit=20000)
+    csv_text = reporting.incidents_to_csv_rows(rows)
+    return Response(
+        csv_text,
+        mimetype="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="crisis-compass-{int(end)}.csv"',
+        },
+    )
+
+
+@app.route("/report/print.html", methods=["GET"])
+def report_print_html():
+    try:
+        hours = float(request.args.get("hours", 24))
+    except (TypeError, ValueError):
+        hours = 24.0
+    end = time.time()
+    start = end - hours * 3600
+    with _db_lock:
+        rows = storage.list_incidents_since(_db_conn, start, end, limit=20000)
+    summary = reporting.build_summary(rows, hours=hours, compare_hours=None)
+    html = reporting.build_print_html(summary, rows)
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@app.route("/report/insights", methods=["POST"])
+def report_insights():
+    body = request.get_json(silent=True) or {}
+    try:
+        hours = float(body.get("hours", 24))
+    except (TypeError, ValueError):
+        hours = 24.0
+    raw_ch = body.get("compare_hours")
+    compare_hours = float(raw_ch) if raw_ch is not None else None
+    tone = (body.get("tone") or "neutral").strip() or "neutral"
+    length = (body.get("length") or "short").strip() or "short"
+    include_llm = body.get("include_llm", True)
+    if isinstance(include_llm, str):
+        include_llm = include_llm.lower() in ("1", "true", "yes")
+
+    rows = _fetch_incidents_for_report_windows(hours, compare_hours)
+    summary = reporting.build_summary(rows, hours=hours, compare_hours=compare_hours)
+    primary_rows = reporting.incidents_in_window(
+        rows, summary["primary"]["start_ts"], summary["primary"]["end_ts"]
+    )
+
+    llm_payload = None
+    llm_error = None
+    if include_llm:
+        peak = summary["primary"].get("peak_bucket")
+        llm_payload, llm_error = llm_report.generate_insights(
+            primary_rows,
+            peak_bucket=peak,
+            tone=tone,
+            length=length,
+        )
+
+    out = {"summary": summary}
+    if llm_payload:
+        out["insights"] = llm_payload
+    if llm_error:
+        out["llm_error"] = llm_error
+    elif include_llm and not llm_payload and not (os.environ.get("OPENAI_API_KEY") or "").strip():
+        out["llm_notice"] = "No OPENAI_API_KEY set; charts and CSV still available."
+    return jsonify(out)
+
+
 @app.route('/debug/logs', methods=['GET'])
 def get_debug_logs():
     """
@@ -378,10 +531,15 @@ def get_local_incidents():
         )
         logger.info(f"Found {len(local_incidents)} incidents")
 
-        merged = [merge_incident_into_store(dict(i)) for i in local_incidents]
+        for i in local_incidents:
+            merge_incident_into_store(dict(i))
+
+        # Return full store so an empty scrape does not wipe the UI; client still sorts/filters.
+        with _db_lock:
+            payload = list(incidents_db)
 
         logger.info("=== REQUEST COMPLETE ===")
-        return jsonify(merged)
+        return jsonify(payload)
         
     except Exception as e:
         logger.error("Error getting local incidents: %s", str(e))
@@ -754,7 +912,8 @@ def _rss_item_relevant_to_area(category, emergency_points, local_boost, content,
         return True
     if emergency_points > 0:
         return True
-    if local_boost >= 10:
+    # Slightly looser so CBC/Global still surface regional context when Google RSS is empty.
+    if local_boost >= 6:
         return True
     if city and len(city) >= 3 and city in c:
         return True
@@ -823,7 +982,7 @@ def scrape_local_news(city_name, latitude, longitude, region=None, country_code=
                 if len(feed.entries) > 0:
                     diag["feeds_with_entries"] += 1
 
-                for entry in feed.entries[:12]:
+                for entry in feed.entries[:24]:
                     diag["entries_considered"] += 1
                     if not is_recent_article(entry):
                         continue
